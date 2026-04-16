@@ -264,4 +264,7 @@ function postForm(url, params) {
 server.listen(CONFIG.PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${CONFIG.PORT}`);
   console.log(`Redirect URI: ${CONFIG.REDIRECT_URI}`);
+  console.log(`App ID loaded: ${CONFIG.INSTAGRAM_APP_ID ? 'yes (' + CONFIG.INSTAGRAM_APP_ID.substring(0, 4) + '...)' : '❌ MISSING - set IG_APP_ID env var'}`);
+  console.log(`App Secret loaded: ${CONFIG.INSTAGRAM_APP_SECRET ? 'yes' : '❌ MISSING - set IG_APP_SECRET env var'}`);
+  console.log(`Redirect URI loaded: ${CONFIG.REDIRECT_URI ? 'yes' : '❌ MISSING - set IG_REDIRECT_URI env var'}`);
 });
