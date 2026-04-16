@@ -5,9 +5,9 @@ const querystring = require('querystring');
 
 // ── Configuration (all from environment variables on Railway) ─
 const CONFIG = {
-  INSTAGRAM_APP_ID: process.env.IG_APP_ID || '',
-  INSTAGRAM_APP_SECRET: process.env.IG_APP_SECRET || '',
-  REDIRECT_URI: process.env.IG_REDIRECT_URI || '',
+  INSTAGRAM_APP_ID: process.env.INSTAGRAM_APP_ID || '',
+  INSTAGRAM_APP_SECRET: process.env.INSTAGRAM_APP_SECRET || '',
+  REDIRECT_URI: process.env.REDIRECT_URI || '',
   PORT: parseInt(process.env.PORT, 10) || 3000,
 };
 
@@ -45,6 +45,17 @@ async function handleRequest(req, res) {
 
   // ── Health check ───────────────────────────────────────────
   if (url.pathname === '/health') return json(res, 200, { status: 'ok' });
+
+  // ── Debug: check env vars (remove in production) ───────────
+  if (url.pathname === '/debug/env') {
+    return json(res, 200, {
+      IG_APP_ID_set: !!process.env.IG_APP_ID,
+      IG_APP_SECRET_set: !!process.env.IG_APP_SECRET,
+      IG_REDIRECT_URI_set: !!process.env.IG_REDIRECT_URI,
+      PORT: process.env.PORT,
+      all_env_keys: Object.keys(process.env).sort(),
+    });
+  }
 
   // ── Step 1: App gets session ID + OAuth URL ────────────────
   if (url.pathname === '/api/auth/start') {
