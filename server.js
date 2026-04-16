@@ -1,45 +1,35 @@
 const https = require('https');
 const http = require('http');
-const fs = require('fs');
 const crypto = require('crypto');
 const querystring = require('querystring');
 
-// ── Configuration ─────────────────────────────────────────────
+// ── Configuration (all from environment variables on Railway) ─
 const CONFIG = {
-  INSTAGRAM_APP_ID: process.env.IG_APP_ID || '1664270071481343',
-  INSTAGRAM_APP_SECRET: process.env.IG_APP_SECRET || '0d42f1be12864e501257a6bc43507432',
-  REDIRECT_URI: process.env.IG_REDIRECT_URI || 'https://host/auth/callback',
+  INSTAGRAM_APP_ID: process.env.IG_APP_ID || '',
+  INSTAGRAM_APP_SECRET: process.env.IG_APP_SECRET || '',
+  REDIRECT_URI: process.env.IG_REDIRECT_URI || '',
   PORT: parseInt(process.env.PORT, 10) || 3000,
-  USE_HTTPS: process.env.USE_HTTPS === 'true',
 };
 
-// ── Session store (in-memory; use Redis/DB in production) ────
-// Maps sessionId → { accessToken, userId, createdAt }
+// ── Session store (in-memory) ────────────────────────────────
 const sessions = new Map();
 
-// Clean expired sessions every 30 min
+// Clean expired sessions every 30 min (1 hour TTL)
 setInterval(() => {
   const now = Date.now();
   for (const [id, s] of sessions) {
-    if (now - s.createdAt > 3600000) sessions.delete(id); // 1 hour TTL
+    if (now - s.createdAt > 3600000) sessions.delete(id);
   }
 }, 1800000);
 
-// ── Create server ────────────────────────────────────────────
-// HTTPS for Instagram OAuth callback, HTTP for Flutter app API calls
-const httpServer = http.createServer(handleRequest);
-let httpsServer = null;
-
-if (fs.existsSync('cert.pem') && fs.existsSync('key.pem')) {
-  httpsServer = https.createServer({ key: fs.readFileSync('key.pem'), cert: fs.readFileSync('cert.pem') }, handleRequest);
-}
+// ── HTTP server (Railway handles HTTPS/TLS termination) ──────
+const server = http.createServer(handleRequest);
 
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost:${CONFIG.PORT}`);
   const start = Date.now();
 
-  console.log(`\n→ ${req.method} ${url.pathname}${url.search ? '?...' : ''}`);
-  console.log(`  Time: ${new Date().toISOString()}`);
+  console.log(`→ ${req.method} ${url.pathname}`);
 
   const origEnd = res.end.bind(res);
   res.end = function (...args) {
@@ -56,8 +46,7 @@ async function handleRequest(req, res) {
   // ── Health check ───────────────────────────────────────────
   if (url.pathname === '/health') return json(res, 200, { status: 'ok' });
 
-  // ── Step 1: App calls this to get the login URL ────────────
-  // Returns a session ID + the Instagram OAuth URL
+  // ── Step 1: App gets session ID + OAuth URL ────────────────
   if (url.pathname === '/api/auth/start') {
     const sessionId = crypto.randomUUID();
     sessions.set(sessionId, { accessToken: null, userId: null, createdAt: Date.now(), status: 'pending' });
@@ -70,17 +59,14 @@ async function handleRequest(req, res) {
       + `&scope=${enc(scopes)}`
       + `&state=${sessionId}`;
 
-    console.log(`  Created session: ${sessionId}`);
-    console.log(`  Auth URL: ${authUrl}`);
-    console.log(`  App ID: ${CONFIG.INSTAGRAM_APP_ID}`);
-    console.log(`  Redirect URI: ${CONFIG.REDIRECT_URI}`);
+    console.log(`  Session created: ${sessionId}`);
     return json(res, 200, { session_id: sessionId, auth_url: authUrl });
   }
 
-  // ── Step 2: Instagram redirects here after user authorizes ─
+  // ── Step 2: Instagram redirects here ───────────────────────
   if (url.pathname === '/auth/callback') {
     const code = (url.searchParams.get('code') || '').replace(/#_$/, '');
-    const state = url.searchParams.get('state'); // session ID
+    const state = url.searchParams.get('state');
     const error = url.searchParams.get('error');
 
     if (error) {
@@ -89,10 +75,10 @@ async function handleRequest(req, res) {
     }
 
     if (!state || !sessions.has(state)) {
-      return htmlPage(res, '❌ Invalid Session', 'Session expired or invalid. Please try again from the app.');
+      return htmlPage(res, '❌ Invalid Session', 'Session expired. Please try again from the app.');
     }
 
-    console.log(`  Auth code received for session ${state}, exchanging...`);
+    console.log(`  Exchanging code for token (session: ${state})`);
 
     try {
       const tokenData = await postForm('https://api.instagram.com/oauth/access_token', {
@@ -105,57 +91,47 @@ async function handleRequest(req, res) {
 
       if (tokenData.error_message) {
         sessions.get(state).status = 'error';
-        console.log(`  Token exchange failed: ${tokenData.error_message}`);
         return htmlPage(res, '❌ Login Failed', tokenData.error_message);
       }
 
       const accessToken = tokenData.data ? tokenData.data[0].access_token : tokenData.access_token;
       const userId = tokenData.data ? tokenData.data[0].user_id : tokenData.user_id;
 
-      // Store token in session
       const session = sessions.get(state);
       session.accessToken = accessToken;
       session.userId = userId;
       session.status = 'authenticated';
-      console.log(`  ✅ Session ${state} authenticated for user ${userId}`);
+      console.log(`  ✅ Authenticated user ${userId}`);
 
       return htmlPage(res, '✅ Login Successful!', 'You can close this window and go back to the app.');
     } catch (err) {
       sessions.get(state).status = 'error';
-      console.log(`  Token exchange error: ${err.message}`);
       return htmlPage(res, '❌ Error', err.message);
     }
   }
 
-  // ── Step 3: App polls this to check if auth is complete ────
+  // ── Step 3: App polls auth status ──────────────────────────
   if (url.pathname === '/api/auth/status') {
     const sessionId = url.searchParams.get('session_id');
-    if (!sessionId || !sessions.has(sessionId)) {
-      return json(res, 404, { status: 'not_found' });
-    }
+    if (!sessionId || !sessions.has(sessionId)) return json(res, 404, { status: 'not_found' });
     const session = sessions.get(sessionId);
-    return json(res, 200, {
-      status: session.status, // 'pending', 'authenticated', or 'error'
-      user_id: session.userId,
-    });
+    return json(res, 200, { status: session.status, user_id: session.userId });
   }
 
-  // ── Helper: get token from session_id header/param ─────────
+  // ── Resolve token from session_id ──────────────────────────
   const sessionId = req.headers['authorization']?.replace('Bearer ', '') || url.searchParams.get('session_id');
   const session = sessionId ? sessions.get(sessionId) : null;
   const token = session?.accessToken;
 
-  // All API routes below require an authenticated session
-  if (url.pathname.startsWith('/api/') && url.pathname !== '/api/auth/start' && url.pathname !== '/api/auth/status') {
-    if (!token) return json(res, 401, { error: 'Not authenticated. Provide session_id.' });
+  if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/')) {
+    if (!token) return json(res, 401, { error: 'Not authenticated' });
   }
 
   // ── Profile ────────────────────────────────────────────────
   if (url.pathname === '/api/profile') {
     try {
       const fields = 'user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count';
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/me?fields=${fields}&access_token=${enc(token)}`);
-      return json(res, 200, data);
+      return json(res, 200, await fetchJSON(`https://graph.instagram.com/v25.0/me?fields=${fields}&access_token=${enc(token)}`));
     } catch (err) { return json(res, 500, { error: err.message }); }
   }
 
@@ -163,8 +139,7 @@ async function handleRequest(req, res) {
   if (url.pathname === '/api/media') {
     try {
       const fields = 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count';
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/me/media?fields=${fields}&access_token=${enc(token)}`);
-      return json(res, 200, data);
+      return json(res, 200, await fetchJSON(`https://graph.instagram.com/v25.0/me/media?fields=${fields}&access_token=${enc(token)}`));
     } catch (err) { return json(res, 500, { error: err.message }); }
   }
 
@@ -174,75 +149,32 @@ async function handleRequest(req, res) {
     if (!mediaId) return json(res, 400, { error: 'Missing media_id' });
     try {
       const metrics = 'views,reach,likes,comments,shares,saved,total_interactions,ig_reels_avg_watch_time,ig_reels_video_view_total_time';
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${mediaId}/insights?metric=${metrics}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
+      return json(res, 200, await fetchJSON(`https://graph.instagram.com/v25.0/${mediaId}/insights?metric=${metrics}&locale=en_US&access_token=${enc(token)}`));
     } catch (err) { return json(res, 500, { error: err.message }); }
   }
 
-  // ── Account insights overview ──────────────────────────────
-  if (url.pathname === '/api/insights/overview') {
-    try {
-      const userId = await getUserId(token);
-      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-      const until = Math.floor(Date.now() / 1000);
+  // ── Account insights ───────────────────────────────────────
+  const insightRoutes = {
+    '/api/insights/overview': () => {
       const metrics = 'accounts_engaged,reach,views,likes,comments,shares,saves,total_interactions';
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=${metrics}&period=day&metric_type=total_value&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
-    } catch (err) { return json(res, 500, { error: err.message }); }
-  }
+      return `metric=${metrics}&period=day&metric_type=total_value`;
+    },
+    '/api/insights/reach-media': () => 'metric=reach&period=day&metric_type=total_value&breakdown=media_product_type',
+    '/api/insights/reach-follower': () => 'metric=reach&period=day&metric_type=total_value&breakdown=follow_type',
+    '/api/insights/views-media': () => 'metric=views&period=day&metric_type=total_value&breakdown=media_product_type',
+    '/api/insights/follows': () => 'metric=follows_and_unfollows&period=day&metric_type=total_value&breakdown=follow_type',
+    '/api/insights/profile-taps': () => 'metric=profile_links_taps&period=day&metric_type=total_value&breakdown=contact_button_type',
+  };
 
-  // ── Reach by media type ────────────────────────────────────
-  if (url.pathname === '/api/insights/reach-media') {
+  if (insightRoutes[url.pathname]) {
     try {
       const userId = await getUserId(token);
       const since = Math.floor(Date.now() / 1000) - 30 * 86400;
       const until = Math.floor(Date.now() / 1000);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=reach&period=day&metric_type=total_value&breakdown=media_product_type&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
-    } catch (err) { return json(res, 500, { error: err.message }); }
-  }
-
-  // ── Reach by follower type ─────────────────────────────────
-  if (url.pathname === '/api/insights/reach-follower') {
-    try {
-      const userId = await getUserId(token);
-      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-      const until = Math.floor(Date.now() / 1000);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=reach&period=day&metric_type=total_value&breakdown=follow_type&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
-    } catch (err) { return json(res, 500, { error: err.message }); }
-  }
-
-  // ── Views by media type ────────────────────────────────────
-  if (url.pathname === '/api/insights/views-media') {
-    try {
-      const userId = await getUserId(token);
-      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-      const until = Math.floor(Date.now() / 1000);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=views&period=day&metric_type=total_value&breakdown=media_product_type&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
-    } catch (err) { return json(res, 500, { error: err.message }); }
-  }
-
-  // ── Follows & unfollows ────────────────────────────────────
-  if (url.pathname === '/api/insights/follows') {
-    try {
-      const userId = await getUserId(token);
-      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-      const until = Math.floor(Date.now() / 1000);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=follows_and_unfollows&period=day&metric_type=total_value&breakdown=follow_type&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
-    } catch (err) { return json(res, 500, { error: err.message }); }
-  }
-
-  // ── Profile link taps ──────────────────────────────────────
-  if (url.pathname === '/api/insights/profile-taps') {
-    try {
-      const userId = await getUserId(token);
-      const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-      const until = Math.floor(Date.now() / 1000);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=profile_links_taps&period=day&metric_type=total_value&breakdown=contact_button_type&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
+      const qs = insightRoutes[url.pathname]();
+      return json(res, 200, await fetchJSON(
+        `https://graph.instagram.com/v25.0/${userId}/insights?${qs}&since=${since}&until=${until}&locale=en_US&access_token=${enc(token)}`
+      ));
     } catch (err) { return json(res, 500, { error: err.message }); }
   }
 
@@ -262,8 +194,9 @@ async function handleRequest(req, res) {
     try {
       const { metric, breakdown } = demoRoutes[url.pathname];
       const userId = await getUserId(token);
-      const data = await fetchJSON(`https://graph.instagram.com/v25.0/${userId}/insights?metric=${metric}&period=lifetime&timeframe=this_month&breakdown=${breakdown}&metric_type=total_value&locale=en_US&access_token=${enc(token)}`);
-      return json(res, 200, data);
+      return json(res, 200, await fetchJSON(
+        `https://graph.instagram.com/v25.0/${userId}/insights?metric=${metric}&period=lifetime&timeframe=this_month&breakdown=${breakdown}&metric_type=total_value&locale=en_US&access_token=${enc(token)}`
+      ));
     } catch (err) { return json(res, 500, { error: err.message }); }
   }
 
@@ -303,10 +236,10 @@ function htmlPage(res, title, message) {
 
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    https.get(url, (r) => {
       let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); } });
+      r.on('data', c => d += c);
+      r.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); } });
     }).on('error', reject);
   });
 }
@@ -317,10 +250,10 @@ function postForm(url, params) {
     const req = https.request(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(postData) },
-    }, (res) => {
+    }, (r) => {
       let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); } });
+      r.on('data', c => d += c);
+      r.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error('Invalid JSON')); } });
     });
     req.on('error', reject);
     req.write(postData);
@@ -328,16 +261,7 @@ function postForm(url, params) {
   });
 }
 
-httpServer.listen(CONFIG.PORT, () => {
-  console.log(`HTTP server running at http://localhost:${CONFIG.PORT} (for Flutter app)`);
+server.listen(CONFIG.PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${CONFIG.PORT}`);
+  console.log(`Redirect URI: ${CONFIG.REDIRECT_URI}`);
 });
-
-if (httpsServer) {
-  const httpsPort = CONFIG.PORT + 1; // 3001
-  httpsServer.listen(httpsPort, () => {
-    console.log(`HTTPS server running at https://localhost:${httpsPort} (for Instagram callback)`);
-    // Override redirect URI to use HTTPS port
-    CONFIG.REDIRECT_URI = `https://localhost:${httpsPort}/auth/callback`;
-    console.log(`Redirect URI: ${CONFIG.REDIRECT_URI}`);
-  });
-}
