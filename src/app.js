@@ -8,6 +8,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const profileRoutes = require('./routes/profile');
 const insightsRoutes = require('./routes/insights');
+const brandRoutes = require('./routes/brand');
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use(authRoutes);
 app.use(profileRoutes);
 app.use(insightsRoutes);
+app.use(brandRoutes);
 
 // ── 404 fallback ─────────────────────────────────────────────
 app.use((req, res) => {

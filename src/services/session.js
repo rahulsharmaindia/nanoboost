@@ -44,4 +44,15 @@ function remove(id) {
   sessions.delete(id);
 }
 
-module.exports = { create, get, remove };
+/**
+ * Find the first session matching a predicate.
+ * Returns { id, session } or null if none match.
+ */
+function findBy(predicate) {
+  for (const [id, session] of sessions) {
+    if (predicate(session)) return { id, session };
+  }
+  return null;
+}
+
+module.exports = { create, get, remove, findBy };
