@@ -40,7 +40,7 @@ function requireBrandAuth(req, res, next) {
 // ── POST /api/brand/register ─────────────────────────────────
 router.post('/api/brand/register', (req, res) => {
   try {
-    const { name, logo, industry, website, description, businessId, password } = req.body;
+    const { name, logo, industry, website, description, socialLinks, businessId, password } = req.body;
 
     // Validate required fields
     const missing = [];
@@ -77,6 +77,7 @@ router.post('/api/brand/register', (req, res) => {
       industry,
       website: website || null,
       description: description || null,
+      socialLinks: socialLinks || null,
       registeredAt: new Date().toISOString(),
     };
 
@@ -137,3 +138,4 @@ router.get('/api/brand', requireBrandAuth, (req, res) => {
 });
 
 module.exports = router;
+module.exports.requireBrandAuth = requireBrandAuth;

@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const profileRoutes = require('./routes/profile');
 const insightsRoutes = require('./routes/insights');
 const brandRoutes = require('./routes/brand');
+const campaignRoutes = require('./routes/campaign');
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use(authRoutes);
 app.use(profileRoutes);
 app.use(insightsRoutes);
 app.use(brandRoutes);
+app.use(campaignRoutes);
 
 // ── 404 fallback ─────────────────────────────────────────────
 app.use((req, res) => {
