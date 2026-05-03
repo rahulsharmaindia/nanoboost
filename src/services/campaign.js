@@ -94,6 +94,16 @@ function findApplication(campaignId, influencerId) {
   return null;
 }
 
+function listApplicationsByInfluencer(influencerId) {
+  const result = [];
+  for (const app of applications.values()) {
+    if (app.influencerId === influencerId) result.push(app);
+  }
+  return result.sort((a, b) =>
+    new Date(b.createdAt) - new Date(a.createdAt)
+  );
+}
+
 function updateApplication(applicationId, data) {
   const app = applications.get(applicationId);
   if (!app) return null;
@@ -139,6 +149,6 @@ function updateSubmission(submissionId, data) {
 module.exports = {
   createCampaign, getCampaign, listByBusiness, updateCampaign, listPublished,
   createApplication, getApplication, listApplicationsByCampaign,
-  findApplication, updateApplication,
+  findApplication, listApplicationsByInfluencer, updateApplication,
   createSubmission, getSubmission, listSubmissionsByCampaign, updateSubmission,
 };

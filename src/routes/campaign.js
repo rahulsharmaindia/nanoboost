@@ -470,4 +470,42 @@ router.post('/api/campaigns/:campaignId/submissions', requireAuth, (req, res) =>
   }
 });
 
+// ── GET /api/my-campaigns (Influencer) ───────────────────────
+// Returns all campaigns the influencer has applied to, with application status.
+router.get('/api/my-campaigns', requireAuth, (req, res) => {
+  try {
+    const session = sessionStore.get(req.sessionId);
+    const influencerId = session.userId;
+
+    const myApps = campaignStore.listApplicationsByInfluencer(influencerId);
+
+    const result = myApps.map(app => {
+      const campaign = campaignStore.getCampaign(app.campaignId);
+      if (!campaign) return null;
+
+      // Look up brand name
+      const ownerSession = sessionStore.findBy(s => s.businessId === campaign.businessId);
+      const brandName = ownerSession && ownerSession.session.brandData
+        ? ownerSession.session.brandData.name
+        : 'Unknown Brand';
+
+      const allApps = campaignStore.listApplicationsByCampaign(campaign.campaignId);
+      const approvedCount = allApps.filter(a => a.status === 'Approved').length;
+
+      return {
+        ...campaign,
+        brandName,
+        approvedCount,
+        applicationStatus: app.status,
+        applicationId: app.applicationId,
+        appliedAt: app.createdAt,
+      };
+    }).filter(Boolean);
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

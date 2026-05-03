@@ -14,6 +14,10 @@ const config = {
     ttlMs: 60 * 60 * 1000,       // 1 hour
     cleanupIntervalMs: 30 * 60 * 1000, // 30 minutes
   },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY || '',
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+  },
 };
 
 module.exports = config;

@@ -10,12 +10,13 @@ const profileRoutes = require('./routes/profile');
 const insightsRoutes = require('./routes/insights');
 const brandRoutes = require('./routes/brand');
 const campaignRoutes = require('./routes/campaign');
+const aiRoutes = require('./routes/ai');
 
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // Simple request logger
 app.use((req, res, next) => {
@@ -34,10 +35,17 @@ app.use(profileRoutes);
 app.use(insightsRoutes);
 app.use(brandRoutes);
 app.use(campaignRoutes);
+app.use(aiRoutes);
 
 // ── 404 fallback ─────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
+});
+
+// ── Global error handler ─────────────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error('Unhandled error:', err.message || err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;
