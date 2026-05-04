@@ -1,0 +1,22 @@
+export declare function getEnv(key: string, fallback?: string): string;
+export declare function getEnvOptional(key: string, fallback?: string): string;
+export declare const env: {
+    nodeEnv: string;
+    port: number;
+    appBaseUrl: string;
+    corsOrigins: string;
+    databaseUrl: string;
+    supabaseUrl: string;
+    supabasePublishableKey: string;
+    supabaseSecretKey: string;
+    supabaseServiceRoleKey: string;
+    instagramAppId: string;
+    instagramAppSecret: string;
+    redirectUri: string;
+    instagramScopes: string;
+    instagramApiVersion: string;
+    geminiApiKey: string;
+    geminiModel: string;
+    sessionTtlMs: number;
+    sessionCleanupIntervalMs: number;
+};

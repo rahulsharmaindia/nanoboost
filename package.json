@@ -1,21 +1,53 @@
 {
   "name": "instagram-insights-server",
-  "version": "2.0.0",
-  "main": "server.js",
+  "version": "3.0.0",
+  "main": "dist/src/main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node --test --test-force-exit tests/**/*.test.js"
+    "build": "tsc -p tsconfig.json",
+    "start:prod": "node dist/src/main.js",
+    "start": "node dist/src/main.js",
+    "dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "dev:watch": "nodemon --exec ts-node -r tsconfig-paths/register src/main.ts",
+    "test": "node --test --test-force-exit tests/**/*.test.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "drizzle-kit check"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@supabase/supabase-js": "^2.105.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
     "cors": "^2.8.5",
-    "express": "^4.21.0"
+    "drizzle-orm": "^0.45.2",
+    "express": "^4.21.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.20.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@nestjs/cli": "^11.0.21",
+    "@nestjs/testing": "^11.1.19",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.0",
+    "drizzle-kit": "^0.31.10",
     "fast-check": "^4.7.0",
-    "supertest": "^7.2.2"
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^6.0.3"
   }
 }
