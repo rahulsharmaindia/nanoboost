@@ -35,17 +35,16 @@ router.get('/auth/callback', async (req, res) => {
   if (error) {
     const session = sessionStore.get(state);
     if (session) session.status = 'error';
-    return res.send(renderPage(
-      '❌ Login Cancelled',
-      req.query.error_description || 'Authorization was denied.'
-    ));
+    // Redirect app with error so it can show a message
+    return res.redirect(
+      `iginsights://auth?status=error&session_id=${state}&reason=${encodeURIComponent(req.query.error_description || 'Authorization denied')}`
+    );
   }
 
   if (!state || !sessionStore.get(state)) {
-    return res.send(renderPage(
-      '❌ Invalid Session',
-      'Session expired. Please try again from the app.'
-    ));
+    return res.redirect(
+      `iginsights://auth?status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`
+    );
   }
 
   console.log(`  Exchanging code for token (session: ${state})`);
@@ -55,7 +54,9 @@ router.get('/auth/callback', async (req, res) => {
 
     if (tokenData.error_message) {
       sessionStore.get(state).status = 'error';
-      return res.send(renderPage('❌ Login Failed', tokenData.error_message));
+      return res.redirect(
+        `iginsights://auth?status=error&session_id=${state}&reason=${encodeURIComponent(tokenData.error_message)}`
+      );
     }
 
     const accessToken = tokenData.data
@@ -71,10 +72,15 @@ router.get('/auth/callback', async (req, res) => {
     session.status = 'authenticated';
 
     console.log(`  ✅ Authenticated user ${userId}`);
-    res.send(renderPage('✅ Login Successful!', 'You can close this window and go back to the app.'));
+
+    // Redirect back to the app via deep link — no polling needed
+    res.redirect(`iginsights://auth?status=authenticated&session_id=${state}`);
   } catch (err) {
-    sessionStore.get(state).status = 'error';
-    res.send(renderPage('❌ Error', err.message));
+    const session = sessionStore.get(state);
+    if (session) session.status = 'error';
+    res.redirect(
+      `iginsights://auth?status=error&session_id=${state}&reason=${encodeURIComponent(err.message)}`
+    );
   }
 });
 
