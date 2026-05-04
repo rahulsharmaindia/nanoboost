@@ -11,7 +11,7 @@ const encode = encodeURIComponent;
 // ── User profile ─────────────────────────────────────────────
 router.get('/api/profile', requireAuth, async (req, res) => {
   try {
-    const fields = 'user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count';
+    const fields = 'user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count,biography';
     const data = await fetch(`${API}/me?fields=${fields}&access_token=${encode(req.accessToken)}`).then(r => r.json());
     res.json(data);
   } catch (err) {
