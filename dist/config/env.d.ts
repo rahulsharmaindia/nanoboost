@@ -3,12 +3,10 @@ export declare function getEnvOptional(key: string, fallback?: string): string;
 export declare const env: {
     nodeEnv: string;
     port: number;
-    appBaseUrl: string;
+    serverUrl: string;
     corsOrigins: string;
     databaseUrl: string;
     supabaseUrl: string;
-    supabasePublishableKey: string;
-    supabaseSecretKey: string;
     supabaseServiceRoleKey: string;
     instagramAppId: string;
     instagramAppSecret: string;

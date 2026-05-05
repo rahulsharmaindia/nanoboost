@@ -9,6 +9,7 @@ export const applicationStatusEnum = pgEnum('application_status', [
   'Pending',
   'Approved',
   'Rejected',
+  'Withdrawn',
 ]);
 
 export const applications = pgTable('applications', {

@@ -1,4 +1,4 @@
-export declare const submissionStatusEnum: import("drizzle-orm/pg-core").PgEnum<["Pending_Review", "Approved", "Revision_Requested"]>;
+export declare const submissionStatusEnum: import("drizzle-orm/pg-core").PgEnum<["Pending_Review", "Approved", "Revision_Requested", "Published"]>;
 export declare const submissions: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "submissions";
     schema: undefined;
@@ -45,6 +45,23 @@ export declare const submissions: import("drizzle-orm/pg-core").PgTableWithColum
             data: string;
             driverParam: string;
             notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        influencerUsername: import("drizzle-orm/pg-core").PgColumn<{
+            name: "influencer_username";
+            tableName: "submissions";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
             hasDefault: false;
             isPrimaryKey: false;
             isAutoincrement: false;
@@ -127,14 +144,14 @@ export declare const submissions: import("drizzle-orm/pg-core").PgTableWithColum
             tableName: "submissions";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "Approved" | "Pending_Review" | "Revision_Requested";
+            data: "Published" | "Approved" | "Pending_Review" | "Revision_Requested";
             driverParam: string;
             notNull: true;
             hasDefault: true;
             isPrimaryKey: false;
             isAutoincrement: false;
             hasRuntimeDefault: false;
-            enumValues: ["Pending_Review", "Approved", "Revision_Requested"];
+            enumValues: ["Pending_Review", "Approved", "Revision_Requested", "Published"];
             baseColumn: never;
             identity: undefined;
             generated: undefined;

@@ -49,12 +49,15 @@ export class AuthService {
         return { status: 'error', sessionId: state };
       }
 
-      const accessToken = tokenData.data
+      const shortLivedToken = tokenData.data
         ? tokenData.data[0].access_token
         : tokenData.access_token;
       const userId = tokenData.data
         ? tokenData.data[0].user_id
         : tokenData.user_id;
+
+      // Exchange for long-lived token (60 days)
+      const accessToken = await this.metaService.exchangeForLongLivedToken(shortLivedToken);
 
       session.accessToken = accessToken;
       session.userId = userId;

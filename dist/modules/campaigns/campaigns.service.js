@@ -69,26 +69,26 @@ let CampaignsService = class CampaignsService {
             }
         }
     }
-    createCampaign(sessionId, data) {
+    async createCampaign(sessionId, data) {
         this.validateCampaignData(data);
         const session = this.sessionService.get(sessionId);
         return this.campaignsRepository.createCampaign(session.businessId, data);
     }
-    listCampaigns(sessionId) {
+    async listCampaigns(sessionId) {
         const session = this.sessionService.get(sessionId);
         return this.campaignsRepository.listByBusiness(session.businessId);
     }
-    getCampaign(sessionId, campaignId) {
+    async getCampaign(sessionId, campaignId) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
         return campaign;
     }
-    updateCampaign(sessionId, campaignId, data) {
+    async updateCampaign(sessionId, campaignId, data) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
@@ -97,11 +97,11 @@ let CampaignsService = class CampaignsService {
         }
         const merged = { ...campaign, ...data };
         this.validateCampaignData(merged);
-        return this.campaignsRepository.updateCampaign(campaignId, data);
+        return (await this.campaignsRepository.updateCampaign(campaignId, data));
     }
-    updateStatus(sessionId, campaignId, newStatus) {
+    async updateStatus(sessionId, campaignId, newStatus) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
@@ -119,23 +119,23 @@ let CampaignsService = class CampaignsService {
                 throw new campaigns_errors_1.CampaignValidationError('Cannot activate campaign before start date');
             }
         }
-        return this.campaignsRepository.updateCampaign(campaignId, { status: newStatus });
+        return (await this.campaignsRepository.updateCampaign(campaignId, { status: newStatus }));
     }
-    listApplications(sessionId, campaignId) {
+    async listApplications(sessionId, campaignId) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
         return this.campaignsRepository.listApplicationsByCampaign(campaignId);
     }
-    reviewApplication(sessionId, campaignId, applicationId, status) {
+    async reviewApplication(sessionId, campaignId, applicationId, status) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
-        const application = this.campaignsRepository.getApplication(applicationId);
+        const application = await this.campaignsRepository.getApplication(applicationId);
         if (!application || application.campaignId !== campaignId) {
             throw new campaigns_errors_1.ApplicationNotFoundError();
         }
@@ -143,25 +143,25 @@ let CampaignsService = class CampaignsService {
             throw new app_errors_1.ValidationError('Status must be "Approved" or "Rejected"');
         }
         if (status === 'Approved') {
-            const allApps = this.campaignsRepository.listApplicationsByCampaign(campaignId);
+            const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
             const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
             if (approvedCount >= Number(campaign.totalSlots)) {
                 throw new campaigns_errors_1.SlotsFullError();
             }
         }
-        return this.campaignsRepository.updateApplication(applicationId, { status: status });
+        return (await this.campaignsRepository.updateApplication(applicationId, { status: status }));
     }
-    listSubmissions(sessionId, campaignId) {
+    async listSubmissions(sessionId, campaignId) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
-        const submissions = this.campaignsRepository.listSubmissionsByCampaign(campaignId);
+        const subs = await this.campaignsRepository.listSubmissionsByCampaign(campaignId);
         if (campaign.requireApproval && campaign.autoApproveAfterHours) {
             const now = new Date();
             const autoApproveMs = Number(campaign.autoApproveAfterHours) * 60 * 60 * 1000;
-            for (const sub of submissions) {
+            for (const sub of subs) {
                 if (sub.status === 'Pending_Review') {
                     const elapsed = now.getTime() - new Date(sub.createdAt).getTime();
                     if (elapsed > autoApproveMs) {
@@ -170,15 +170,15 @@ let CampaignsService = class CampaignsService {
                 }
             }
         }
-        return submissions;
+        return subs;
     }
-    reviewSubmission(sessionId, campaignId, submissionId, status, revisionNotes) {
+    async reviewSubmission(sessionId, campaignId, submissionId, status, revisionNotes) {
         const session = this.sessionService.get(sessionId);
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign || campaign.businessId !== session.businessId) {
             throw new campaigns_errors_1.CampaignNotFoundError();
         }
-        const submission = this.campaignsRepository.getSubmission(submissionId);
+        const submission = await this.campaignsRepository.getSubmission(submissionId);
         if (!submission || submission.campaignId !== campaignId) {
             throw new campaigns_errors_1.SubmissionNotFoundError();
         }
@@ -188,22 +188,24 @@ let CampaignsService = class CampaignsService {
         const updateData = { status };
         if (revisionNotes)
             updateData.revisionNotes = revisionNotes;
-        return this.campaignsRepository.updateSubmission(submissionId, updateData);
+        return (await this.campaignsRepository.updateSubmission(submissionId, updateData));
     }
-    listMarketplace(sessionId) {
-        const published = this.campaignsRepository.listPublished();
-        return published.map((campaign) => {
+    async listMarketplace(sessionId) {
+        const published = await this.campaignsRepository.listPublished();
+        const results = [];
+        for (const campaign of published) {
             const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
             const brandName = ownerSession && ownerSession.session.brandData
                 ? ownerSession.session.brandData.name
                 : 'Unknown Brand';
-            const apps = this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
+            const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
             const approvedCount = apps.filter((a) => a.status === 'Approved').length;
-            return { ...campaign, brandName, approvedCount };
-        });
+            results.push({ ...campaign, brandName, approvedCount });
+        }
+        return results;
     }
     async applyToCampaign(sessionId, campaignId, accessToken) {
-        const campaign = this.campaignsRepository.getCampaign(campaignId);
+        const campaign = await this.campaignsRepository.getCampaign(campaignId);
         if (!campaign)
             throw new campaigns_errors_1.CampaignNotFoundError();
         if (campaign.status !== 'Published' && campaign.status !== 'Active') {
@@ -211,10 +213,10 @@ let CampaignsService = class CampaignsService {
         }
         const session = this.sessionService.get(sessionId);
         const influencerId = session.userId;
-        const existing = this.campaignsRepository.findApplication(campaignId, influencerId);
+        const existing = await this.campaignsRepository.findApplication(campaignId, influencerId);
         if (existing)
             throw new campaigns_errors_1.DuplicateApplicationError();
-        const allApps = this.campaignsRepository.listApplicationsByCampaign(campaignId);
+        const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
         const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
         if (approvedCount >= Number(campaign.totalSlots)) {
             throw new app_errors_1.ValidationError('No available slots for this campaign');
@@ -225,48 +227,48 @@ let CampaignsService = class CampaignsService {
             followerCount,
         });
     }
-    getMyApplication(sessionId, campaignId) {
+    async getMyApplication(sessionId, campaignId) {
         const session = this.sessionService.get(sessionId);
         const influencerId = session.userId;
-        const application = this.campaignsRepository.findApplication(campaignId, influencerId);
+        const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
         if (!application)
             throw new campaigns_errors_1.ApplicationNotFoundError();
         return application;
     }
-    submitContent(sessionId, campaignId, data) {
+    async submitContent(sessionId, campaignId, data) {
         const session = this.sessionService.get(sessionId);
         const influencerId = session.userId;
-        const application = this.campaignsRepository.findApplication(campaignId, influencerId);
+        const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
         if (!application || application.status !== 'Approved') {
             throw new campaigns_errors_1.SubmissionForbiddenError();
         }
         return this.campaignsRepository.createSubmission(campaignId, influencerId, data);
     }
-    getMyCampaigns(sessionId) {
+    async getMyCampaigns(sessionId) {
         const session = this.sessionService.get(sessionId);
         const influencerId = session.userId;
-        const myApps = this.campaignsRepository.listApplicationsByInfluencer(influencerId);
-        return myApps
-            .map((app) => {
-            const campaign = this.campaignsRepository.getCampaign(app.campaignId);
+        const myApps = await this.campaignsRepository.listApplicationsByInfluencer(influencerId);
+        const results = [];
+        for (const app of myApps) {
+            const campaign = await this.campaignsRepository.getCampaign(app.campaignId);
             if (!campaign)
-                return null;
+                continue;
             const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
             const brandName = ownerSession && ownerSession.session.brandData
                 ? ownerSession.session.brandData.name
                 : 'Unknown Brand';
-            const allApps = this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
+            const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
             const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
-            return {
+            results.push({
                 ...campaign,
                 brandName,
                 approvedCount,
                 applicationStatus: app.status,
                 applicationId: app.applicationId,
                 appliedAt: app.createdAt,
-            };
-        })
-            .filter(Boolean);
+            });
+        }
+        return results;
     }
 };
 exports.CampaignsService = CampaignsService;

@@ -231,7 +231,14 @@ router.get('/api/campaigns/:campaignId/applications', requireBrandAuth, (req, re
     }
 
     const applications = campaignStore.listApplicationsByCampaign(req.params.campaignId);
-    res.json(applications);
+
+    // Map username → influencerUsername for frontend compatibility
+    const mapped = applications.map(app => ({
+      ...app,
+      influencerUsername: app.username,
+    }));
+
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -347,8 +354,9 @@ router.patch('/api/campaigns/:campaignId/submissions/:submissionId', requireBran
 router.get('/api/marketplace/campaigns', requireAuth, (req, res) => {
   try {
     const published = campaignStore.listPublished();
+    const { search, niche, minBudget, maxBudget, page, limit } = req.query;
 
-    const enriched = published.map(campaign => {
+    let enriched = published.map(campaign => {
       // Look up the brand name from the campaign owner's session
       const ownerSession = sessionStore.findBy(s => s.businessId === campaign.businessId);
       const brandName = ownerSession && ownerSession.session.brandData
@@ -366,7 +374,42 @@ router.get('/api/marketplace/campaigns', requireAuth, (req, res) => {
       };
     });
 
-    res.json(enriched);
+    // Server-side filtering
+    if (search) {
+      const q = search.toLowerCase();
+      enriched = enriched.filter(c =>
+        c.title.toLowerCase().includes(q) ||
+        (c.brandName || '').toLowerCase().includes(q)
+      );
+    }
+    if (niche) {
+      enriched = enriched.filter(c =>
+        c.preferredNiche && c.preferredNiche.toLowerCase() === niche.toLowerCase()
+      );
+    }
+    if (minBudget) {
+      enriched = enriched.filter(c => Number(c.budgetPerCreator) >= Number(minBudget));
+    }
+    if (maxBudget) {
+      enriched = enriched.filter(c => Number(c.budgetPerCreator) <= Number(maxBudget));
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(limit) || 10));
+    const total = enriched.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const offset = (pageNum - 1) * pageSize;
+    const items = enriched.slice(offset, offset + pageSize);
+
+    res.json({
+      items,
+      page: pageNum,
+      limit: pageSize,
+      total,
+      totalPages,
+      hasMore: pageNum < totalPages,
+    });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -444,8 +487,30 @@ router.get('/api/campaigns/:campaignId/my-application', requireAuth, (req, res) 
   }
 });
 
+// ── PATCH /api/campaigns/:campaignId/my-application/withdraw (Influencer) ─
+router.patch('/api/campaigns/:campaignId/my-application/withdraw', requireAuth, (req, res) => {
+  try {
+    const session = sessionStore.get(req.sessionId);
+    const influencerId = session.userId;
+
+    const application = campaignStore.findApplication(req.params.campaignId, influencerId);
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    if (application.status !== 'Pending') {
+      return res.status(400).json({ error: 'Only pending applications can be withdrawn' });
+    }
+
+    const updated = campaignStore.updateApplication(application.applicationId, { status: 'Withdrawn' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /api/campaigns/:campaignId/submissions (Influencer) ─
-router.post('/api/campaigns/:campaignId/submissions', requireAuth, (req, res) => {
+router.post('/api/campaigns/:campaignId/submissions', requireAuth, async (req, res) => {
   try {
     const session = sessionStore.get(req.sessionId);
     const influencerId = session.userId;
@@ -458,10 +523,22 @@ router.post('/api/campaigns/:campaignId/submissions', requireAuth, (req, res) =>
 
     const { contentUrl, contentCaption, notesToBrand } = req.body;
 
+    // Get username for denormalization
+    let influencerUsername = application.username || 'unknown';
+    try {
+      const profileRes = await fetch(
+        `https://graph.instagram.com/v25.0/me?fields=username&access_token=${encodeURIComponent(req.accessToken)}`
+      );
+      const profileData = await profileRes.json();
+      if (profileData.username) influencerUsername = profileData.username;
+    } catch {
+      // Use application username as fallback
+    }
+
     const submission = campaignStore.createSubmission(
       req.params.campaignId,
       influencerId,
-      { contentUrl, contentCaption, notesToBrand }
+      { contentUrl, contentCaption, notesToBrand, influencerUsername }
     );
 
     res.status(201).json(submission);

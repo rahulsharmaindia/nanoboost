@@ -20,6 +20,7 @@ export interface SubmissionRecord {
     submissionId: string;
     campaignId: string;
     influencerId: string;
+    influencerUsername?: string;
     contentUrl?: string;
     contentCaption?: string;
     notesToBrand?: string;
@@ -28,29 +29,36 @@ export interface SubmissionRecord {
     createdAt: string;
 }
 export declare class CampaignsRepository {
-    private readonly campaigns;
-    private readonly applications;
-    private readonly submissions;
-    createCampaign(businessId: string, data: Record<string, any>): CampaignRecord;
-    getCampaign(campaignId: string): CampaignRecord | null;
-    listByBusiness(businessId: string): CampaignRecord[];
-    updateCampaign(campaignId: string, data: Record<string, any>): CampaignRecord | null;
-    listPublished(): CampaignRecord[];
+    private readonly db;
+    private readonly useDb;
+    private readonly memCampaigns;
+    private readonly memApplications;
+    private readonly memSubmissions;
+    constructor(drizzleClient: any);
+    createCampaign(businessId: string, data: Record<string, any>): Promise<CampaignRecord>;
+    getCampaign(campaignId: string): Promise<CampaignRecord | null>;
+    listByBusiness(businessId: string): Promise<CampaignRecord[]>;
+    updateCampaign(campaignId: string, data: Record<string, any>): Promise<CampaignRecord | null>;
+    listPublished(): Promise<CampaignRecord[]>;
     createApplication(campaignId: string, influencerId: string, influencerData: {
         username: string;
         followerCount: number;
-    }): ApplicationRecord;
-    getApplication(applicationId: string): ApplicationRecord | null;
-    listApplicationsByCampaign(campaignId: string): ApplicationRecord[];
-    findApplication(campaignId: string, influencerId: string): ApplicationRecord | null;
-    listApplicationsByInfluencer(influencerId: string): ApplicationRecord[];
-    updateApplication(applicationId: string, data: Partial<ApplicationRecord>): ApplicationRecord | null;
+    }): Promise<ApplicationRecord>;
+    getApplication(applicationId: string): Promise<ApplicationRecord | null>;
+    listApplicationsByCampaign(campaignId: string): Promise<ApplicationRecord[]>;
+    findApplication(campaignId: string, influencerId: string): Promise<ApplicationRecord | null>;
+    listApplicationsByInfluencer(influencerId: string): Promise<ApplicationRecord[]>;
+    updateApplication(applicationId: string, data: Partial<ApplicationRecord>): Promise<ApplicationRecord | null>;
     createSubmission(campaignId: string, influencerId: string, data: {
         contentUrl?: string;
         contentCaption?: string;
         notesToBrand?: string;
-    }): SubmissionRecord;
-    getSubmission(submissionId: string): SubmissionRecord | null;
-    listSubmissionsByCampaign(campaignId: string): SubmissionRecord[];
-    updateSubmission(submissionId: string, data: Partial<SubmissionRecord>): SubmissionRecord | null;
+        influencerUsername?: string;
+    }): Promise<SubmissionRecord>;
+    getSubmission(submissionId: string): Promise<SubmissionRecord | null>;
+    listSubmissionsByCampaign(campaignId: string): Promise<SubmissionRecord[]>;
+    updateSubmission(submissionId: string, data: Partial<SubmissionRecord>): Promise<SubmissionRecord | null>;
+    private mapDbCampaign;
+    private mapDbApplication;
+    private mapDbSubmission;
 }

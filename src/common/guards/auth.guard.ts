@@ -7,7 +7,6 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';

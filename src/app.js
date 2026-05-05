@@ -15,11 +15,20 @@ const insightsRoutes = require('./routes/insights');
 const brandRoutes = require('./routes/brand');
 const campaignRoutes = require('./routes/campaign');
 const aiRoutes = require('./routes/ai');
+const accountRoutes = require('./routes/account');
+const legalRoutes = require('./routes/legal');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+
+// Rate limiting
+const { generalLimit, metaApiLimit, authLimit } = require('./middleware/rate-limit');
+app.use('/api/auth/start', authLimit);
+app.use('/api/profile', metaApiLimit);
+app.use('/api/media', metaApiLimit);
+app.use('/api/insights', metaApiLimit);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -37,6 +46,8 @@ app.use(insightsRoutes);
 app.use(brandRoutes);
 app.use(campaignRoutes);
 app.use(aiRoutes);
+app.use(accountRoutes);
+app.use(legalRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

@@ -3,6 +3,7 @@ export declare class MetaService {
     private fetchJSON;
     private postForm;
     exchangeCodeForToken(code: string): Promise<any>;
+    exchangeForLongLivedToken(shortLivedToken: string): Promise<string>;
     getUserId(token: string): Promise<string>;
     getUserProfile(token: string): Promise<any>;
     getUserMedia(token: string): Promise<any>;

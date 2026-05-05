@@ -9,10 +9,28 @@ const router = Router();
 // ── Helpers ──────────────────────────────────────────────────
 
 /**
- * Hash a password using SHA-256.
+ * Hash a password using scrypt (proper password hashing).
+ * Returns "salt:hash" format.
  */
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+/**
+ * Verify a password against a stored "salt:hash" string.
+ * Also supports legacy SHA-256 hashes (no colon separator) for migration.
+ */
+function verifyPassword(password, stored) {
+  // Legacy SHA-256 format (no salt separator)
+  if (!stored.includes(':')) {
+    const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
+    return legacyHash === stored;
+  }
+  const [salt, hash] = stored.split(':');
+  const verify = crypto.scryptSync(password, salt, 64).toString('hex');
+  return verify === hash;
 }
 
 /**
@@ -103,8 +121,7 @@ router.post('/api/brand/login', (req, res) => {
     }
 
     // Verify password
-    const hashedPassword = hashPassword(password);
-    if (found.session.hashedPassword !== hashedPassword) {
+    if (!verifyPassword(password, found.session.hashedPassword)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 

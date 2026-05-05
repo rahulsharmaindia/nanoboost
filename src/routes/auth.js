@@ -5,7 +5,6 @@ const { Router } = require('express');
 const config = require('../config');
 const sessionStore = require('../services/session');
 const instagram = require('../services/instagram');
-const { renderPage } = require('../utils/html');
 
 const router = Router();
 const encode = encodeURIComponent;
@@ -22,7 +21,7 @@ router.get('/api/auth/start', (req, res) => {
     `&scope=${encode(config.instagram.scopes)}` +
     `&state=${sessionId}`;
 
-  console.log(`  Session created: ${sessionId}`);
+  console.log(`  Session created: ${sessionId.slice(0, 8)}…`);
   res.json({ session_id: sessionId, auth_url: authUrl });
 });
 
@@ -59,17 +58,21 @@ router.get('/auth/callback', async (req, res) => {
       );
     }
 
-    const accessToken = tokenData.data
+    const shortLivedToken = tokenData.data
       ? tokenData.data[0].access_token
       : tokenData.access_token;
     const userId = tokenData.data
       ? tokenData.data[0].user_id
       : tokenData.user_id;
 
+    // Exchange for long-lived token (60 days) — critical for production
+    const accessToken = await instagram.exchangeForLongLivedToken(shortLivedToken);
+
     const session = sessionStore.get(state);
     session.accessToken = accessToken;
     session.userId = userId;
     session.status = 'authenticated';
+    session.tokenExchangedAt = new Date().toISOString();
 
     console.log(`  ✅ Authenticated user ${userId}`);
 

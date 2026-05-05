@@ -2,7 +2,7 @@
 // Imports all feature modules. Keep this file thin.
 
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
 // Infrastructure
 import { DatabaseModule } from './database/database.module';

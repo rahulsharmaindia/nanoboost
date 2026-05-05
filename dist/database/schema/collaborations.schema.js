@@ -8,11 +8,13 @@ exports.submissionStatusEnum = (0, pg_core_1.pgEnum)('submission_status', [
     'Pending_Review',
     'Approved',
     'Revision_Requested',
+    'Published',
 ]);
 exports.submissions = (0, pg_core_1.pgTable)('submissions', {
     submissionId: (0, pg_core_1.text)('submission_id').primaryKey().$defaultFn(() => (0, crypto_1.randomUUID)()),
     campaignId: (0, pg_core_1.text)('campaign_id').notNull().references(() => campaigns_schema_1.campaigns.campaignId, { onDelete: 'cascade' }),
     influencerId: (0, pg_core_1.text)('influencer_id').notNull(),
+    influencerUsername: (0, pg_core_1.text)('influencer_username'),
     contentUrl: (0, pg_core_1.text)('content_url'),
     contentCaption: (0, pg_core_1.text)('content_caption'),
     notesToBrand: (0, pg_core_1.text)('notes_to_brand'),

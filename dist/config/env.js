@@ -16,12 +16,10 @@ function getEnvOptional(key, fallback = '') {
 exports.env = {
     nodeEnv: getEnvOptional('NODE_ENV', 'development'),
     port: parseInt(getEnvOptional('PORT', '3000'), 10),
-    appBaseUrl: getEnvOptional('APP_BASE_URL', 'http://localhost:3000'),
+    serverUrl: getEnvOptional('SERVER_URL', 'http://localhost:3000'),
     corsOrigins: getEnvOptional('CORS_ORIGINS', '*'),
     databaseUrl: getEnvOptional('DATABASE_URL'),
     supabaseUrl: getEnvOptional('SUPABASE_URL'),
-    supabasePublishableKey: getEnvOptional('SUPABASE_PUBLISHABLE_KEY'),
-    supabaseSecretKey: getEnvOptional('SUPABASE_SECRET_KEY'),
     supabaseServiceRoleKey: getEnvOptional('SUPABASE_SERVICE_ROLE_KEY'),
     instagramAppId: getEnvOptional('INSTAGRAM_APP_ID'),
     instagramAppSecret: getEnvOptional('INSTAGRAM_APP_SECRET'),

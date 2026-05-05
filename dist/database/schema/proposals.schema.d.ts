@@ -1,4 +1,4 @@
-export declare const applicationStatusEnum: import("drizzle-orm/pg-core").PgEnum<["Pending", "Approved", "Rejected"]>;
+export declare const applicationStatusEnum: import("drizzle-orm/pg-core").PgEnum<["Pending", "Approved", "Rejected", "Withdrawn"]>;
 export declare const applications: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "applications";
     schema: undefined;
@@ -93,14 +93,14 @@ export declare const applications: import("drizzle-orm/pg-core").PgTableWithColu
             tableName: "applications";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "Pending" | "Approved" | "Rejected";
+            data: "Pending" | "Approved" | "Rejected" | "Withdrawn";
             driverParam: string;
             notNull: true;
             hasDefault: true;
             isPrimaryKey: false;
             isAutoincrement: false;
             hasRuntimeDefault: false;
-            enumValues: ["Pending", "Approved", "Rejected"];
+            enumValues: ["Pending", "Approved", "Rejected", "Withdrawn"];
             baseColumn: never;
             identity: undefined;
             generated: undefined;

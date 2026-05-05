@@ -8,6 +8,7 @@ exports.applicationStatusEnum = (0, pg_core_1.pgEnum)('application_status', [
     'Pending',
     'Approved',
     'Rejected',
+    'Withdrawn',
 ]);
 exports.applications = (0, pg_core_1.pgTable)('applications', {
     applicationId: (0, pg_core_1.text)('application_id').primaryKey().$defaultFn(() => (0, crypto_1.randomUUID)()),

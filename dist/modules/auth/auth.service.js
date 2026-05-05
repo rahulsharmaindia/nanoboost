@@ -44,12 +44,13 @@ let AuthService = AuthService_1 = class AuthService {
                 session.status = 'error';
                 return { status: 'error', sessionId: state };
             }
-            const accessToken = tokenData.data
+            const shortLivedToken = tokenData.data
                 ? tokenData.data[0].access_token
                 : tokenData.access_token;
             const userId = tokenData.data
                 ? tokenData.data[0].user_id
                 : tokenData.user_id;
+            const accessToken = await this.metaService.exchangeForLongLivedToken(shortLivedToken);
             session.accessToken = accessToken;
             session.userId = userId;
             session.status = 'authenticated';

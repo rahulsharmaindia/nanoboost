@@ -17,7 +17,7 @@ export function getEnvOptional(key: string, fallback = ''): string {
 export const env = {
   nodeEnv: getEnvOptional('NODE_ENV', 'development'),
   port: parseInt(getEnvOptional('PORT', '3000'), 10),
-  appBaseUrl: getEnvOptional('APP_BASE_URL', 'http://localhost:3000'),
+  serverUrl: getEnvOptional('SERVER_URL', 'http://localhost:3000'),
   corsOrigins: getEnvOptional('CORS_ORIGINS', '*'),
 
   // Database
@@ -25,8 +25,6 @@ export const env = {
 
   // Supabase
   supabaseUrl: getEnvOptional('SUPABASE_URL'),
-  supabasePublishableKey: getEnvOptional('SUPABASE_PUBLISHABLE_KEY'),
-  supabaseSecretKey: getEnvOptional('SUPABASE_SECRET_KEY'),
   supabaseServiceRoleKey: getEnvOptional('SUPABASE_SERVICE_ROLE_KEY'),
 
   // Instagram / Meta
@@ -40,7 +38,7 @@ export const env = {
   geminiApiKey: getEnvOptional('GEMINI_API_KEY'),
   geminiModel: getEnvOptional('GEMINI_MODEL', 'gemini-2.0-flash'),
 
-  // Session (legacy in-memory fallback TTL)
+  // Session (in-memory store TTL)
   sessionTtlMs: 60 * 60 * 1000,
   sessionCleanupIntervalMs: 30 * 60 * 1000,
 };

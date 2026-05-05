@@ -38,6 +38,24 @@ export class MetaService {
     });
   }
 
+  async exchangeForLongLivedToken(shortLivedToken: string): Promise<string> {
+    const encode = encodeURIComponent;
+    try {
+      const data = await this.fetchJSON(
+        `${API_BASE}/access_token?grant_type=ig_exchange_token&client_secret=${encode(env.instagramAppSecret)}&access_token=${encode(shortLivedToken)}`,
+      );
+      if (data.access_token) {
+        this.logger.log(`Long-lived token obtained (expires in ${data.expires_in}s)`);
+        return data.access_token;
+      }
+      this.logger.warn('Long-lived token exchange failed, using short-lived token');
+      return shortLivedToken;
+    } catch (err) {
+      this.logger.warn(`Long-lived token exchange error: ${(err as Error).message}`);
+      return shortLivedToken;
+    }
+  }
+
   async getUserId(token: string): Promise<string> {
     const encode = encodeURIComponent;
     const me = await this.fetchJSON(`${API_BASE}/me?fields=user_id&access_token=${encode(token)}`);

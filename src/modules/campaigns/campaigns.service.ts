@@ -34,14 +34,12 @@ export class CampaignsService {
   // ── Validation ─────────────────────────────────────────────
 
   private validateCampaignData(data: Record<string, any>): void {
-    // Required fields
     for (const field of REQUIRED_CAMPAIGN_FIELDS) {
       if (data[field] === undefined || data[field] === null || data[field] === '') {
         throw new CampaignValidationError(`${field} is required`);
       }
     }
 
-    // Date constraints
     const start = new Date(data.startDate);
     const end = new Date(data.endDate);
     const appDeadline = new Date(data.applicationDeadline);
@@ -53,7 +51,6 @@ export class CampaignsService {
     if (subDeadline > end) throw new CampaignValidationError('Submission deadline must be on or before end date');
     if (contentDeadline > subDeadline) throw new CampaignValidationError('Content deadline must be on or before submission deadline');
 
-    // Numeric constraints
     if (Number(data.totalSlots) < 1) throw new CampaignValidationError('Total slots must be at least 1');
     if (Number(data.minimumFollowers) <= 0) throw new CampaignValidationError('Minimum followers must be greater than 0');
     if (Number(data.totalBudget) < 0) throw new CampaignValidationError('Total budget cannot be negative');
@@ -61,20 +58,17 @@ export class CampaignsService {
       throw new CampaignValidationError('Budget per creator cannot exceed total campaign budget');
     }
 
-    // Age group
     const ageMin = Number(data.ageGroupMin);
     const ageMax = Number(data.ageGroupMax);
     if (ageMin < 13 || ageMin > 65) throw new CampaignValidationError('Age must be between 13 and 65');
     if (ageMax < 13 || ageMax > 65) throw new CampaignValidationError('Age must be between 13 and 65');
     if (ageMin >= ageMax) throw new CampaignValidationError('Minimum age must be less than maximum age');
 
-    // Engagement rate
     const engagementRate = Number(data.requiredEngagementRate);
     if (engagementRate < 0 || engagementRate > 100) {
       throw new CampaignValidationError('Engagement rate must be between 0 and 100');
     }
 
-    // Reserve slots
     if (data.reserveSlots !== undefined && data.reserveSlots !== null) {
       if (Number(data.reserveSlots) > Number(data.totalSlots)) {
         throw new CampaignValidationError('Reserve slots cannot exceed total slots');
@@ -84,29 +78,29 @@ export class CampaignsService {
 
   // ── Campaign CRUD ──────────────────────────────────────────
 
-  createCampaign(sessionId: string, data: Record<string, any>) {
+  async createCampaign(sessionId: string, data: Record<string, any>) {
     this.validateCampaignData(data);
     const session = this.sessionService.get(sessionId)!;
     return this.campaignsRepository.createCampaign(session.businessId!, data);
   }
 
-  listCampaigns(sessionId: string) {
+  async listCampaigns(sessionId: string) {
     const session = this.sessionService.get(sessionId)!;
     return this.campaignsRepository.listByBusiness(session.businessId!);
   }
 
-  getCampaign(sessionId: string, campaignId: string) {
+  async getCampaign(sessionId: string, campaignId: string) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
     return campaign;
   }
 
-  updateCampaign(sessionId: string, campaignId: string, data: Record<string, any>) {
+  async updateCampaign(sessionId: string, campaignId: string, data: Record<string, any>) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
@@ -115,12 +109,12 @@ export class CampaignsService {
     }
     const merged = { ...campaign, ...data };
     this.validateCampaignData(merged);
-    return this.campaignsRepository.updateCampaign(campaignId, data)!;
+    return (await this.campaignsRepository.updateCampaign(campaignId, data))!;
   }
 
-  updateStatus(sessionId: string, campaignId: string, newStatus: string) {
+  async updateStatus(sessionId: string, campaignId: string, newStatus: string) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
@@ -142,28 +136,28 @@ export class CampaignsService {
       }
     }
 
-    return this.campaignsRepository.updateCampaign(campaignId, { status: newStatus })!;
+    return (await this.campaignsRepository.updateCampaign(campaignId, { status: newStatus }))!;
   }
 
   // ── Applications (Brand side) ──────────────────────────────
 
-  listApplications(sessionId: string, campaignId: string) {
+  async listApplications(sessionId: string, campaignId: string) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
     return this.campaignsRepository.listApplicationsByCampaign(campaignId);
   }
 
-  reviewApplication(sessionId: string, campaignId: string, applicationId: string, status: string) {
+  async reviewApplication(sessionId: string, campaignId: string, applicationId: string, status: string) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
 
-    const application = this.campaignsRepository.getApplication(applicationId);
+    const application = await this.campaignsRepository.getApplication(applicationId);
     if (!application || application.campaignId !== campaignId) {
       throw new ApplicationNotFoundError();
     }
@@ -173,32 +167,32 @@ export class CampaignsService {
     }
 
     if (status === 'Approved') {
-      const allApps = this.campaignsRepository.listApplicationsByCampaign(campaignId);
+      const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
       const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
       if (approvedCount >= Number(campaign.totalSlots)) {
         throw new SlotsFullError();
       }
     }
 
-    return this.campaignsRepository.updateApplication(applicationId, { status: status as any })!;
+    return (await this.campaignsRepository.updateApplication(applicationId, { status: status as any }))!;
   }
 
   // ── Submissions (Brand side) ───────────────────────────────
 
-  listSubmissions(sessionId: string, campaignId: string) {
+  async listSubmissions(sessionId: string, campaignId: string) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
 
-    const submissions = this.campaignsRepository.listSubmissionsByCampaign(campaignId);
+    const subs = await this.campaignsRepository.listSubmissionsByCampaign(campaignId);
 
     // Auto-approve logic
     if (campaign.requireApproval && campaign.autoApproveAfterHours) {
       const now = new Date();
       const autoApproveMs = Number(campaign.autoApproveAfterHours) * 60 * 60 * 1000;
-      for (const sub of submissions) {
+      for (const sub of subs) {
         if (sub.status === 'Pending_Review') {
           const elapsed = now.getTime() - new Date(sub.createdAt).getTime();
           if (elapsed > autoApproveMs) {
@@ -208,10 +202,10 @@ export class CampaignsService {
       }
     }
 
-    return submissions;
+    return subs;
   }
 
-  reviewSubmission(
+  async reviewSubmission(
     sessionId: string,
     campaignId: string,
     submissionId: string,
@@ -219,12 +213,12 @@ export class CampaignsService {
     revisionNotes?: string,
   ) {
     const session = this.sessionService.get(sessionId)!;
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign || campaign.businessId !== session.businessId) {
       throw new CampaignNotFoundError();
     }
 
-    const submission = this.campaignsRepository.getSubmission(submissionId);
+    const submission = await this.campaignsRepository.getSubmission(submissionId);
     if (!submission || submission.campaignId !== campaignId) {
       throw new SubmissionNotFoundError();
     }
@@ -236,30 +230,32 @@ export class CampaignsService {
     const updateData: Record<string, any> = { status };
     if (revisionNotes) updateData.revisionNotes = revisionNotes;
 
-    return this.campaignsRepository.updateSubmission(submissionId, updateData)!;
+    return (await this.campaignsRepository.updateSubmission(submissionId, updateData))!;
   }
 
   // ── Marketplace (Influencer side) ──────────────────────────
 
-  listMarketplace(sessionId: string) {
-    const published = this.campaignsRepository.listPublished();
+  async listMarketplace(sessionId: string) {
+    const published = await this.campaignsRepository.listPublished();
 
-    return published.map((campaign) => {
+    const results = [];
+    for (const campaign of published) {
       const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
       const brandName =
         ownerSession && ownerSession.session.brandData
           ? ownerSession.session.brandData.name
           : 'Unknown Brand';
 
-      const apps = this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
+      const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
       const approvedCount = apps.filter((a) => a.status === 'Approved').length;
 
-      return { ...campaign, brandName, approvedCount };
-    });
+      results.push({ ...campaign, brandName, approvedCount });
+    }
+    return results;
   }
 
   async applyToCampaign(sessionId: string, campaignId: string, accessToken: string) {
-    const campaign = this.campaignsRepository.getCampaign(campaignId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign) throw new CampaignNotFoundError();
 
     if (campaign.status !== 'Published' && campaign.status !== 'Active') {
@@ -269,10 +265,10 @@ export class CampaignsService {
     const session = this.sessionService.get(sessionId)!;
     const influencerId = session.userId!;
 
-    const existing = this.campaignsRepository.findApplication(campaignId, influencerId);
+    const existing = await this.campaignsRepository.findApplication(campaignId, influencerId);
     if (existing) throw new DuplicateApplicationError();
 
-    const allApps = this.campaignsRepository.listApplicationsByCampaign(campaignId);
+    const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
     const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
     if (approvedCount >= Number(campaign.totalSlots)) {
       throw new ValidationError('No available slots for this campaign');
@@ -286,15 +282,15 @@ export class CampaignsService {
     });
   }
 
-  getMyApplication(sessionId: string, campaignId: string) {
+  async getMyApplication(sessionId: string, campaignId: string) {
     const session = this.sessionService.get(sessionId)!;
     const influencerId = session.userId!;
-    const application = this.campaignsRepository.findApplication(campaignId, influencerId);
+    const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
     if (!application) throw new ApplicationNotFoundError();
     return application;
   }
 
-  submitContent(
+  async submitContent(
     sessionId: string,
     campaignId: string,
     data: { contentUrl?: string; contentCaption?: string; notesToBrand?: string },
@@ -302,7 +298,7 @@ export class CampaignsService {
     const session = this.sessionService.get(sessionId)!;
     const influencerId = session.userId!;
 
-    const application = this.campaignsRepository.findApplication(campaignId, influencerId);
+    const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
     if (!application || application.status !== 'Approved') {
       throw new SubmissionForbiddenError();
     }
@@ -310,35 +306,35 @@ export class CampaignsService {
     return this.campaignsRepository.createSubmission(campaignId, influencerId, data);
   }
 
-  getMyCampaigns(sessionId: string) {
+  async getMyCampaigns(sessionId: string) {
     const session = this.sessionService.get(sessionId)!;
     const influencerId = session.userId!;
 
-    const myApps = this.campaignsRepository.listApplicationsByInfluencer(influencerId);
+    const myApps = await this.campaignsRepository.listApplicationsByInfluencer(influencerId);
 
-    return myApps
-      .map((app) => {
-        const campaign = this.campaignsRepository.getCampaign(app.campaignId);
-        if (!campaign) return null;
+    const results = [];
+    for (const app of myApps) {
+      const campaign = await this.campaignsRepository.getCampaign(app.campaignId);
+      if (!campaign) continue;
 
-        const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
-        const brandName =
-          ownerSession && ownerSession.session.brandData
-            ? ownerSession.session.brandData.name
-            : 'Unknown Brand';
+      const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
+      const brandName =
+        ownerSession && ownerSession.session.brandData
+          ? ownerSession.session.brandData.name
+          : 'Unknown Brand';
 
-        const allApps = this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
-        const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
+      const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
+      const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
 
-        return {
-          ...campaign,
-          brandName,
-          approvedCount,
-          applicationStatus: app.status,
-          applicationId: app.applicationId,
-          appliedAt: app.createdAt,
-        };
-      })
-      .filter(Boolean);
+      results.push({
+        ...campaign,
+        brandName,
+        approvedCount,
+        applicationStatus: app.status,
+        applicationId: app.applicationId,
+        appliedAt: app.createdAt,
+      });
+    }
+    return results;
   }
 }

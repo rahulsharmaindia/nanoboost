@@ -224,16 +224,6 @@ Rules:
 - Use line breaks inside the backtick block for readability.`,
 };
 
-// Fields each tool type uses (for validation context)
-const TOOL_FIELDS = {
-  content_idea: ['niche', 'topic', 'tone', 'platform_goal', 'format'],
-  hook_creator: ['niche', 'topic', 'tone'],
-  bio_generator: ['niche', 'topic', 'tone', 'audience'],
-  script_idea: ['niche', 'topic', 'tone', 'format'],
-  story_idea: ['niche', 'topic', 'tone', 'platform_goal', 'audience'],
-  caption_idea: ['niche', 'topic', 'tone', 'platform_goal', 'audience'],
-};
-
 /**
  * Builds a structured user context block from the request params.
  */

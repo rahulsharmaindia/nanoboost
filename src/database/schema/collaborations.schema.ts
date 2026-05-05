@@ -9,12 +9,14 @@ export const submissionStatusEnum = pgEnum('submission_status', [
   'Pending_Review',
   'Approved',
   'Revision_Requested',
+  'Published',
 ]);
 
 export const submissions = pgTable('submissions', {
   submissionId: text('submission_id').primaryKey().$defaultFn(() => randomUUID()),
   campaignId: text('campaign_id').notNull().references(() => campaigns.campaignId, { onDelete: 'cascade' }),
   influencerId: text('influencer_id').notNull(),
+  influencerUsername: text('influencer_username'),  // denormalized for fast reads
   contentUrl: text('content_url'),
   contentCaption: text('content_caption'),
   notesToBrand: text('notes_to_brand'),

@@ -39,6 +39,22 @@ let MetaService = MetaService_1 = class MetaService {
             code,
         });
     }
+    async exchangeForLongLivedToken(shortLivedToken) {
+        const encode = encodeURIComponent;
+        try {
+            const data = await this.fetchJSON(`${API_BASE}/access_token?grant_type=ig_exchange_token&client_secret=${encode(env_1.env.instagramAppSecret)}&access_token=${encode(shortLivedToken)}`);
+            if (data.access_token) {
+                this.logger.log(`Long-lived token obtained (expires in ${data.expires_in}s)`);
+                return data.access_token;
+            }
+            this.logger.warn('Long-lived token exchange failed, using short-lived token');
+            return shortLivedToken;
+        }
+        catch (err) {
+            this.logger.warn(`Long-lived token exchange error: ${err.message}`);
+            return shortLivedToken;
+        }
+    }
     async getUserId(token) {
         const encode = encodeURIComponent;
         const me = await this.fetchJSON(`${API_BASE}/me?fields=user_id&access_token=${encode(token)}`);
