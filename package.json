@@ -1,11 +1,11 @@
 {
   "name": "instagram-insights-server",
   "version": "3.0.0",
-  "main": "dist/src/main.js",
+  "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start:prod": "node dist/src/main.js",
-    "start": "node dist/src/main.js",
+    "start:prod": "node dist/main.js",
+    "start": "node dist/main.js",
     "dev": "ts-node -r tsconfig-paths/register src/main.ts",
     "dev:watch": "nodemon --exec ts-node -r tsconfig-paths/register src/main.ts",
     "test": "node --test --test-force-exit tests/**/*.test.js",
