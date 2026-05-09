@@ -42,8 +42,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
       code = AppErrorCode.VALIDATION_ERROR;
     } else if (exception instanceof Error) {
-      // Log unexpected errors but don't expose internals
-      this.logger.error(`Unhandled error on ${request.method} ${request.url}`, exception.stack);
+      // Log the full error including the underlying DB error message
+      this.logger.error(
+        `Unhandled error on ${request.method} ${request.url}\n` +
+        `Error: ${exception.message}`,
+        exception.stack,
+      );
+      // Expose DB errors in non-production for easier debugging
+      if (process.env.NODE_ENV !== 'production') {
+        message = exception.message;
+      }
     }
 
     response.status(statusCode).json({
