@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { getCorsOptions } from './config/cors';
 import { env } from './config/env';
+import { getDrizzleClient } from './database/database.client';
+import { probeDatabase } from './database/database.probe';
 
 async function bootstrap() {
   if (!env.databaseUrl) {
@@ -16,6 +18,11 @@ async function bootstrap() {
     );
     process.exit(1);
   }
+
+  // Confirm we can reach the target DB and the expected schema exists
+  // before accepting traffic. Fails fast with a clear error in the
+  // deployment logs instead of every request returning a 500.
+  await probeDatabase(getDrizzleClient());
 
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
