@@ -16,12 +16,15 @@ export class AccountController {
   // POST /api/account/delete
   @UseGuards(AuthGuard)
   @Post('api/account/delete')
-  deleteAccount(@Req() req: Request) {
-    const session = this.sessionService.get((req as any).sessionId)!;
+  async deleteAccount(@Req() req: Request) {
+    const sessionId = (req as any).sessionId as string;
     const confirmationCode = randomBytes(8).toString('hex').toUpperCase();
 
-    session.accessToken = null;
-    session.status = 'error'; // invalidate session
+    // Invalidate the session — accessToken removed, status set to error.
+    await this.sessionService.update(sessionId, {
+      accessToken: null,
+      status: 'error',
+    });
 
     return {
       confirmationCode,
@@ -33,16 +36,16 @@ export class AccountController {
   // POST /api/account/disconnect
   @UseGuards(AuthGuard)
   @Post('api/account/disconnect')
-  disconnectInstagram(@Req() req: Request) {
-    const session = this.sessionService.get((req as any).sessionId)!;
-    session.accessToken = null;
+  async disconnectInstagram(@Req() req: Request) {
+    const sessionId = (req as any).sessionId as string;
+    await this.sessionService.update(sessionId, { accessToken: null });
     return { status: 'disconnected' };
   }
 
   // POST /api/meta/deletion-callback (Meta calls this)
   @Public()
   @Post('api/meta/deletion-callback')
-  metaDeletionCallback(@Req() req: Request) {
+  async metaDeletionCallback(@Req() req: Request) {
     const signedRequest = (req as any).body?.signed_request;
     if (!signedRequest) {
       return { error: 'Missing signed_request' };
@@ -50,16 +53,12 @@ export class AccountController {
 
     const [, payload] = signedRequest.split('.');
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    const userId = data.user_id;
+    const userId = String(data.user_id);
 
     const confirmationCode = randomBytes(8).toString('hex').toUpperCase();
 
-    // Invalidate any sessions for this user
-    const found = this.sessionService.findBy(s => s.userId === userId);
-    if (found) {
-      found.session.accessToken = null;
-      found.session.status = 'error';
-    }
+    // Invalidate all sessions for this Instagram user.
+    await this.sessionService.invalidateByProviderUserId(userId);
 
     return {
       url: `${env.serverUrl}/api/meta/deletion-status?code=${confirmationCode}`,

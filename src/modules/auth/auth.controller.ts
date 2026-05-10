@@ -14,8 +14,8 @@ export class AuthController {
   // GET /api/auth/start
   @Public()
   @Get('api/auth/start')
-  startOAuth() {
-    const { sessionId, authUrl } = this.authService.startOAuth();
+  async startOAuth() {
+    const { sessionId, authUrl } = await this.authService.startOAuth();
     return { session_id: sessionId, auth_url: authUrl };
   }
 
@@ -35,7 +35,14 @@ export class AuthController {
       );
     }
 
-    if (!state || !this.authService.getStatus(state).status || this.authService.getStatus(state).status === 'not_found') {
+    if (!state) {
+      return res.redirect(
+        `iginsights://auth?status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
+      );
+    }
+
+    const existing = await this.authService.getStatus(state);
+    if (existing.status === 'not_found') {
       return res.redirect(
         `iginsights://auth?status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
       );
@@ -56,24 +63,24 @@ export class AuthController {
   // GET /api/auth/status
   @Public()
   @Get('api/auth/status')
-  getStatus(@Query('session_id') sessionId: string) {
+  async getStatus(@Query('session_id') sessionId: string) {
     if (!sessionId) {
       return { status: 'not_found' };
     }
-    const { status, userId } = this.authService.getStatus(sessionId);
+    const { status, userId } = await this.authService.getStatus(sessionId);
     return { status, user_id: userId };
   }
 
   // GET /api/auth/logout
   @Public()
   @Get('api/auth/logout')
-  logout(@Req() req: Request) {
+  async logout(@Req() req: Request) {
     const sessionId =
       req.headers['authorization']?.replace('Bearer ', '') ||
       (req.query.session_id as string);
 
     if (sessionId) {
-      this.authService.logout(sessionId);
+      await this.authService.logout(sessionId);
     }
     return { status: 'logged_out' };
   }

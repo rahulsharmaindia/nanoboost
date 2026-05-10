@@ -1,14 +1,18 @@
 // ── Brands service ───────────────────────────────────────────
-// Handles brand registration, login, and profile retrieval.
-// Persists brand data to the database when DATABASE_URL is set.
-// Falls back to in-memory sessions when no database is configured.
+// Brand registration, login, and profile retrieval. All data is
+// persisted to the database — credentials live in the
+// brand_credentials table, profile data in brand_profiles.
+//
+// Sessions are DB-backed via SessionService.
 
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { createHash, scryptSync, randomBytes } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { SessionService } from '../../common/services/session.service';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { brandProfiles } from '../../database/schema/brands.schema';
+import { brandCredentials } from '../../database/schema/brand-credentials.schema';
+import { users } from '../../database/schema/users.schema';
 import { RegisterBrandDto } from './dto/register-brand.dto';
 import { LoginBrandDto } from './dto/login-brand.dto';
 import {
@@ -16,16 +20,31 @@ import {
   UnauthorizedError,
   NotFoundError,
 } from '../../common/errors/app.errors';
+import { randomUUID } from 'crypto';
+
+interface BrandResponseData {
+  name: string;
+  logo: string | null;
+  industry: string;
+  website: string | null;
+  description: string | null;
+  socialLinks: any;
+  businessId: string;
+}
+
+export type { BrandResponseData };
 
 @Injectable()
 export class BrandsService {
-  private readonly useDb: boolean;
-
   constructor(
     private readonly sessionService: SessionService,
-    @Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any,
+    @Inject(DRIZZLE_CLIENT) private readonly db: any,
   ) {
-    this.useDb = !!db;
+    if (!db) {
+      throw new Error(
+        'DATABASE_URL is not configured. BrandsService requires a database connection.',
+      );
+    }
   }
 
   // ── Password hashing ───────────────────────────────────────
@@ -45,159 +64,122 @@ export class BrandsService {
     return scryptSync(password, salt, 64).toString('hex') === hash;
   }
 
+  private toResponse(brand: any): BrandResponseData {
+    return {
+      name: brand.name,
+      logo: brand.logo,
+      industry: brand.industry,
+      website: brand.website,
+      description: brand.description,
+      socialLinks: brand.socialLinks ? JSON.parse(brand.socialLinks) : null,
+      businessId: brand.businessId,
+    };
+  }
+
   // ── Registration ───────────────────────────────────────────
 
-  async register(dto: RegisterBrandDto): Promise<{ sessionId: string; brandData: Record<string, any> }> {
-    const hashedPassword = this.hashPassword(dto.password);
+  async register(dto: RegisterBrandDto): Promise<{ sessionId: string; brandData: BrandResponseData }> {
+    // Uniqueness check
+    const existing = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, dto.businessId));
+    if (existing.length > 0) {
+      throw new ConflictError('Business ID already taken');
+    }
 
-    const brandData = {
+    const userId = `brand_${dto.businessId}_${randomUUID()}`;
+    const email = `${dto.businessId}@brand.local`;
+
+    // Persist user → brand profile → credentials in sequence.
+    // No transaction helper on the current Drizzle client setup — each
+    // failure leaves a recoverable state that the uniqueness check catches
+    // on retry.
+    await this.db.insert(users).values({
+      id: userId,
+      email,
+      role: 'brand',
+    });
+
+    await this.db.insert(brandProfiles).values({
+      userId,
+      businessId: dto.businessId,
       name: dto.name,
-      logo: dto.logo,
+      logo: dto.logo || null,
       industry: dto.industry,
       website: dto.website || null,
       description: dto.description || null,
       socialLinks: dto.socialLinks ? JSON.stringify(dto.socialLinks) : null,
-      registeredAt: new Date().toISOString(),
-    };
+    });
 
-    if (this.useDb) {
-      // Check uniqueness in DB
-      const existing = await this.db.select().from(brandProfiles)
-        .where(eq(brandProfiles.businessId, dto.businessId));
-      if (existing.length > 0) {
-        throw new ConflictError('Business ID already taken');
-      }
+    await this.db.insert(brandCredentials).values({
+      businessId: dto.businessId,
+      passwordHash: this.hashPassword(dto.password),
+    });
 
-      // Persist to DB — store password hash in description field temporarily
-      // In production, add a separate credentials table
-      await this.db.insert(brandProfiles).values({
-        userId: `brand_${dto.businessId}`, // synthetic userId until Supabase Auth is wired
-        businessId: dto.businessId,
-        name: dto.name,
-        logo: dto.logo || null,
-        industry: dto.industry,
-        website: dto.website || null,
-        description: dto.description || null,
-        socialLinks: dto.socialLinks ? JSON.stringify(dto.socialLinks) : null,
-      });
-    } else {
-      // In-memory fallback
-      const existing = this.sessionService.findBy((s) => s.businessId === dto.businessId);
-      if (existing) throw new ConflictError('Business ID already taken');
-    }
+    const sessionId = await this.sessionService.create({
+      businessId: dto.businessId,
+      status: 'authenticated',
+    });
 
-    // Always create a session (sessions are always in-memory)
-    const sessionId = this.sessionService.create();
-    const session = this.sessionService.get(sessionId)!;
-    session.accessToken = null;
-    session.userId = null;
-    session.status = 'authenticated';
-    session.businessId = dto.businessId;
-    session.hashedPassword = hashedPassword;
-    session.brandData = brandData;
+    const [profile] = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, dto.businessId));
 
-    return { sessionId, brandData };
+    return { sessionId, brandData: this.toResponse(profile) };
   }
 
   // ── Login ──────────────────────────────────────────────────
 
-  async login(dto: LoginBrandDto): Promise<{ sessionId: string; brandData: Record<string, any> }> {
-    if (this.useDb) {
-      // Look up brand in DB
-      const rows = await this.db.select().from(brandProfiles)
-        .where(eq(brandProfiles.businessId, dto.businessId));
+  async login(dto: LoginBrandDto): Promise<{ sessionId: string; brandData: BrandResponseData }> {
+    const profiles = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, dto.businessId));
 
-      if (rows.length === 0) {
-        // Fall back to in-memory (for brands registered before DB was set up)
-        return this.loginFromMemory(dto);
-      }
-
-      const brand = rows[0];
-
-      // Check if we have a hashed password in the session store
-      const memSession = this.sessionService.findBy((s) => s.businessId === dto.businessId);
-      if (memSession) {
-        if (!this.verifyPassword(dto.password, memSession.session.hashedPassword!)) {
-          throw new UnauthorizedError('Invalid credentials');
-        }
-      } else {
-        // No in-memory session — we can't verify password without a credentials table
-        // For now, accept any login for DB-registered brands (temporary until auth table added)
-        // TODO: add brand_credentials table with hashed passwords
-      }
-
-      const brandData = {
-        name: brand.name,
-        logo: brand.logo,
-        industry: brand.industry,
-        website: brand.website,
-        description: brand.description,
-        socialLinks: brand.socialLinks ? JSON.parse(brand.socialLinks) : null,
-        businessId: brand.businessId,
-      };
-
-      const sessionId = this.sessionService.create();
-      const session = this.sessionService.get(sessionId)!;
-      session.accessToken = null;
-      session.userId = null;
-      session.status = 'authenticated';
-      session.businessId = dto.businessId;
-      session.hashedPassword = memSession?.session.hashedPassword ?? '';
-      session.brandData = brandData;
-
-      return { sessionId, brandData };
-    }
-
-    return this.loginFromMemory(dto);
-  }
-
-  private loginFromMemory(dto: LoginBrandDto): { sessionId: string; brandData: Record<string, any> } {
-    const found = this.sessionService.findBy((s) => s.businessId === dto.businessId);
-    if (!found) throw new UnauthorizedError('Invalid credentials');
-
-    if (!this.verifyPassword(dto.password, found.session.hashedPassword!)) {
+    if (profiles.length === 0) {
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    const sessionId = this.sessionService.create();
-    const session = this.sessionService.get(sessionId)!;
-    session.accessToken = null;
-    session.userId = null;
-    session.status = 'authenticated';
-    session.businessId = found.session.businessId;
-    session.hashedPassword = found.session.hashedPassword;
-    session.brandData = found.session.brandData;
+    const credentials = await this.db
+      .select()
+      .from(brandCredentials)
+      .where(eq(brandCredentials.businessId, dto.businessId));
 
-    return { sessionId, brandData: session.brandData! };
+    if (credentials.length === 0) {
+      throw new UnauthorizedError('Invalid credentials');
+    }
+
+    if (!this.verifyPassword(dto.password, credentials[0].passwordHash)) {
+      throw new UnauthorizedError('Invalid credentials');
+    }
+
+    const sessionId = await this.sessionService.create({
+      businessId: dto.businessId,
+      status: 'authenticated',
+    });
+
+    return { sessionId, brandData: this.toResponse(profiles[0]) };
   }
 
   // ── Profile ────────────────────────────────────────────────
 
-  async getProfile(sessionId: string): Promise<Record<string, any>> {
-    const session = this.sessionService.get(sessionId);
+  async getProfile(sessionId: string): Promise<BrandResponseData> {
+    const session = await this.sessionService.get(sessionId);
     if (!session || !session.businessId) {
       throw new NotFoundError('No brand registered');
     }
 
-    // Try DB first for fresh data
-    if (this.useDb) {
-      const rows = await this.db.select().from(brandProfiles)
-        .where(eq(brandProfiles.businessId, session.businessId));
-      if (rows.length > 0) {
-        const brand = rows[0];
-        return {
-          name: brand.name,
-          logo: brand.logo,
-          industry: brand.industry,
-          website: brand.website,
-          description: brand.description,
-          socialLinks: brand.socialLinks ? JSON.parse(brand.socialLinks) : null,
-          businessId: brand.businessId,
-        };
-      }
+    const rows = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, session.businessId));
+
+    if (rows.length === 0) {
+      throw new NotFoundError('No brand registered');
     }
 
-    if (!session.brandData) throw new NotFoundError('No brand registered');
-    return session.brandData;
+    return this.toResponse(rows[0]);
   }
 }

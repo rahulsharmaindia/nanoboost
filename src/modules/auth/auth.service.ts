@@ -1,6 +1,7 @@
 // ── Auth service ─────────────────────────────────────────────
 // Handles Instagram OAuth flow: session creation, token exchange,
-// status polling, and logout.
+// status polling, and logout. Sessions are persisted in the
+// database (see sessions table / SessionService).
 
 import { Injectable, Logger } from '@nestjs/common';
 import { SessionService } from '../../common/services/session.service';
@@ -16,8 +17,8 @@ export class AuthService {
     private readonly metaService: MetaService,
   ) {}
 
-  startOAuth(): { sessionId: string; authUrl: string } {
-    const sessionId = this.sessionService.create();
+  async startOAuth(): Promise<{ sessionId: string; authUrl: string }> {
+    const sessionId = await this.sessionService.create({ status: 'pending' });
 
     const encode = encodeURIComponent;
     const authUrl =
@@ -36,7 +37,7 @@ export class AuthService {
     code: string,
     state: string,
   ): Promise<{ status: string; sessionId: string }> {
-    const session = this.sessionService.get(state);
+    const session = await this.sessionService.get(state);
     if (!session) {
       return { status: 'error', sessionId: state };
     }
@@ -45,7 +46,7 @@ export class AuthService {
       const tokenData = await this.metaService.exchangeCodeForToken(code);
 
       if (tokenData.error_message) {
-        session.status = 'error';
+        await this.sessionService.update(state, { status: 'error' });
         return { status: 'error', sessionId: state };
       }
 
@@ -59,28 +60,30 @@ export class AuthService {
       // Exchange for long-lived token (60 days)
       const accessToken = await this.metaService.exchangeForLongLivedToken(shortLivedToken);
 
-      session.accessToken = accessToken;
-      session.userId = userId;
-      session.status = 'authenticated';
+      await this.sessionService.update(state, {
+        accessToken,
+        providerUserId: String(userId),
+        status: 'authenticated',
+      });
 
       this.logger.log(`Authenticated user ${userId}`);
       return { status: 'authenticated', sessionId: state };
     } catch (err) {
-      session.status = 'error';
+      await this.sessionService.update(state, { status: 'error' });
       this.logger.error(`OAuth callback failed: ${(err as Error).message}`);
       return { status: 'error', sessionId: state };
     }
   }
 
-  getStatus(sessionId: string): { status: string; userId: string | null } {
-    const session = this.sessionService.get(sessionId);
+  async getStatus(sessionId: string): Promise<{ status: string; userId: string | null }> {
+    const session = await this.sessionService.get(sessionId);
     if (!session) {
       return { status: 'not_found', userId: null };
     }
-    return { status: session.status, userId: session.userId };
+    return { status: session.status, userId: session.providerUserId };
   }
 
-  logout(sessionId: string): void {
-    this.sessionService.remove(sessionId);
+  async logout(sessionId: string): Promise<void> {
+    await this.sessionService.remove(sessionId);
   }
 }

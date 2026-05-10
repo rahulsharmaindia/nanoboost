@@ -14,7 +14,7 @@ import { UnauthorizedError } from '../errors/app.errors';
 export class BrandAuthGuard implements CanActivate {
   constructor(private readonly sessionService: SessionService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const sessionId =
       request.headers['authorization']?.replace('Bearer ', '') ||
@@ -24,7 +24,7 @@ export class BrandAuthGuard implements CanActivate {
       throw new UnauthorizedError('Not authenticated');
     }
 
-    const session = this.sessionService.get(sessionId);
+    const session = await this.sessionService.get(sessionId);
 
     if (!session || !session.businessId) {
       throw new UnauthorizedError('Not authenticated');

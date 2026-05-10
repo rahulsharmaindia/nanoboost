@@ -1,15 +1,16 @@
 // ── Campaigns repository ─────────────────────────────────────
 // Persistence layer for campaigns, applications, and submissions.
-// Uses Drizzle ORM when DATABASE_URL is set, falls back to in-memory
-// Maps when no database is configured (tests, local dev).
+// Uses Drizzle ORM against the Supabase Postgres database.
+// DATABASE_URL must be set — there is no in-memory fallback.
 
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, and, or, desc, gt } from 'drizzle-orm';
+import { eq, and, inArray, or, desc, gt } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { campaigns } from '../../database/schema/campaigns.schema';
 import { applications } from '../../database/schema/proposals.schema';
 import { submissions } from '../../database/schema/collaborations.schema';
+import { brandProfiles } from '../../database/schema/brands.schema';
 import { CampaignStatus, ApplicationStatus, SubmissionStatus } from './campaigns.types';
 
 export interface CampaignRecord {
@@ -46,17 +47,12 @@ export interface SubmissionRecord {
 
 @Injectable()
 export class CampaignsRepository {
-  private readonly db: any;
-  private readonly useDb: boolean;
-
-  // In-memory fallback (used when no DATABASE_URL)
-  private readonly memCampaigns = new Map<string, CampaignRecord>();
-  private readonly memApplications = new Map<string, ApplicationRecord>();
-  private readonly memSubmissions = new Map<string, SubmissionRecord>();
-
-  constructor(@Inject(DRIZZLE_CLIENT) @Optional() drizzleClient: any) {
-    this.db = drizzleClient;
-    this.useDb = !!drizzleClient;
+  constructor(@Inject(DRIZZLE_CLIENT) private readonly db: any) {
+    if (!db) {
+      throw new Error(
+        'DATABASE_URL is not configured. CampaignsRepository requires a database connection.',
+      );
+    }
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -65,140 +61,121 @@ export class CampaignsRepository {
 
   async createCampaign(businessId: string, data: Record<string, any>): Promise<CampaignRecord> {
     const campaignId = randomUUID();
-    const now = new Date().toISOString();
-    const record: CampaignRecord = {
+
+    await this.db.insert(campaigns).values({
       campaignId,
       businessId,
-      ...data,
+      title: data.title,
+      description: data.description,
+      objective: data.objective,
+      campaignType: data.campaignType,
+      platform: data.platform || 'Instagram',
+      postTypes: data.postTypes ? JSON.stringify(data.postTypes) : null,
+      deliverables: data.deliverables ? JSON.stringify(data.deliverables) : null,
+      contentCountPerInfluencer: data.contentCountPerInfluencer ?? null,
+      captionGuidelines: data.captionGuidelines ?? null,
+      hashtags: data.hashtags ? JSON.stringify(data.hashtags) : null,
+      mentions: data.mentions ? JSON.stringify(data.mentions) : null,
+      handleToTag: data.handleToTag ?? null,
+      referenceImages: data.referenceImages ? JSON.stringify(data.referenceImages) : null,
+      ageGroupMin: data.ageGroupMin,
+      ageGroupMax: data.ageGroupMax,
+      gender: data.gender,
+      targetLocation: data.targetLocation,
+      interests: data.interests ? JSON.stringify(data.interests) : null,
+      languagePreference: data.languagePreference ?? null,
+      totalBudget: String(data.totalBudget),
+      budgetPerCreator: String(data.budgetPerCreator),
+      paymentModel: data.paymentModel,
+      commissionRate: data.commissionRate != null ? String(data.commissionRate) : null,
+      productDetails: data.productDetails ?? null,
+      bonusCriteria: data.bonusCriteria ?? null,
+      performanceIncentive: data.performanceIncentive ?? null,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      applicationDeadline: data.applicationDeadline,
+      submissionDeadline: data.submissionDeadline,
+      contentDeadline: data.contentDeadline,
+      revisionAllowedCount: data.revisionAllowedCount ?? 0,
+      reviewTurnaroundHours: data.reviewTurnaroundHours ?? null,
+      postingTimeWindow: data.postingTimeWindow ?? null,
+      minimumFollowers: data.minimumFollowers,
+      requiredEngagementRate: String(data.requiredEngagementRate),
+      preferredNiche: data.preferredNiche,
+      contentStyleExpectations: data.contentStyleExpectations ?? null,
+      audienceGenderRatio: data.audienceGenderRatio ?? null,
+      totalSlots: data.totalSlots,
+      reserveSlots: data.reserveSlots ?? null,
+      priorityInviteList: data.priorityInviteList ? JSON.stringify(data.priorityInviteList) : null,
+      guidelinesDos: data.guidelinesDos ?? null,
+      guidelinesDonts: data.guidelinesDonts ?? null,
+      brandMessaging: data.brandMessaging ?? null,
+      approvalProcessDescription: data.approvalProcessDescription ?? null,
+      requireApproval: data.requireApproval != null ? String(data.requireApproval) : null,
+      autoApproveAfterHours: data.autoApproveAfterHours ?? null,
       status: data.status || 'Draft',
-      createdAt: now,
-      updatedAt: now,
-    };
+    });
 
-    if (this.useDb) {
-      // Map flat record to schema columns
-      await this.db.insert(campaigns).values({
-        campaignId,
-        businessId,
-        title: data.title,
-        description: data.description,
-        objective: data.objective,
-        campaignType: data.campaignType,
-        platform: data.platform || 'Instagram',
-        postTypes: data.postTypes ? JSON.stringify(data.postTypes) : null,
-        deliverables: data.deliverables ? JSON.stringify(data.deliverables) : null,
-        contentCountPerInfluencer: data.contentCountPerInfluencer ?? null,
-        captionGuidelines: data.captionGuidelines ?? null,
-        hashtags: data.hashtags ? JSON.stringify(data.hashtags) : null,
-        mentions: data.mentions ? JSON.stringify(data.mentions) : null,
-        handleToTag: data.handleToTag ?? null,
-        referenceImages: data.referenceImages ? JSON.stringify(data.referenceImages) : null,
-        ageGroupMin: data.ageGroupMin,
-        ageGroupMax: data.ageGroupMax,
-        gender: data.gender,
-        targetLocation: data.targetLocation,
-        interests: data.interests ? JSON.stringify(data.interests) : null,
-        languagePreference: data.languagePreference ?? null,
-        totalBudget: String(data.totalBudget),
-        budgetPerCreator: String(data.budgetPerCreator),
-        paymentModel: data.paymentModel,
-        commissionRate: data.commissionRate != null ? String(data.commissionRate) : null,
-        productDetails: data.productDetails ?? null,
-        bonusCriteria: data.bonusCriteria ?? null,
-        performanceIncentive: data.performanceIncentive ?? null,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        applicationDeadline: data.applicationDeadline,
-        submissionDeadline: data.submissionDeadline,
-        contentDeadline: data.contentDeadline,
-        revisionAllowedCount: data.revisionAllowedCount ?? 0,
-        reviewTurnaroundHours: data.reviewTurnaroundHours ?? null,
-        postingTimeWindow: data.postingTimeWindow ?? null,
-        minimumFollowers: data.minimumFollowers,
-        requiredEngagementRate: String(data.requiredEngagementRate),
-        preferredNiche: data.preferredNiche,
-        contentStyleExpectations: data.contentStyleExpectations ?? null,
-        audienceGenderRatio: data.audienceGenderRatio ?? null,
-        totalSlots: data.totalSlots,
-        reserveSlots: data.reserveSlots ?? null,
-        priorityInviteList: data.priorityInviteList ? JSON.stringify(data.priorityInviteList) : null,
-        guidelinesDos: data.guidelinesDos ?? null,
-        guidelinesDonts: data.guidelinesDonts ?? null,
-        brandMessaging: data.brandMessaging ?? null,
-        approvalProcessDescription: data.approvalProcessDescription ?? null,
-        requireApproval: data.requireApproval != null ? String(data.requireApproval) : null,
-        autoApproveAfterHours: data.autoApproveAfterHours ?? null,
-        status: data.status || 'Draft',
-      });
-      return record;
-    }
-
-    this.memCampaigns.set(campaignId, record);
-    return record;
+    return (await this.getCampaign(campaignId))!;
   }
 
   async getCampaign(campaignId: string): Promise<CampaignRecord | null> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(campaigns).where(eq(campaigns.campaignId, campaignId));
-      if (rows.length === 0) return null;
-      return this.mapDbCampaign(rows[0]);
-    }
-    return this.memCampaigns.get(campaignId) || null;
+    const rows = await this.db.select().from(campaigns).where(eq(campaigns.campaignId, campaignId));
+    if (rows.length === 0) return null;
+    return this.mapDbCampaign(rows[0]);
   }
 
   async listByBusiness(businessId: string): Promise<CampaignRecord[]> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(campaigns)
-        .where(eq(campaigns.businessId, businessId))
-        .orderBy(desc(campaigns.createdAt));
-      return rows.map((r: any) => this.mapDbCampaign(r));
-    }
-    const result: CampaignRecord[] = [];
-    for (const campaign of this.memCampaigns.values()) {
-      if (campaign.businessId === businessId) result.push(campaign);
-    }
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const rows = await this.db
+      .select()
+      .from(campaigns)
+      .where(eq(campaigns.businessId, businessId))
+      .orderBy(desc(campaigns.createdAt));
+    return rows.map((r: any) => this.mapDbCampaign(r));
   }
 
   async updateCampaign(campaignId: string, data: Record<string, any>): Promise<CampaignRecord | null> {
-    if (this.useDb) {
-      const updateData: Record<string, any> = { updatedAt: new Date() };
-      if (data.status !== undefined) updateData.status = data.status;
-      if (data.title !== undefined) updateData.title = data.title;
-      if (data.description !== undefined) updateData.description = data.description;
-      // Add more fields as needed for full update support
-      await this.db.update(campaigns).set(updateData).where(eq(campaigns.campaignId, campaignId));
-      return this.getCampaign(campaignId);
-    }
-    const campaign = this.memCampaigns.get(campaignId);
-    if (!campaign) return null;
-    Object.assign(campaign, data, { updatedAt: new Date().toISOString() });
-    return campaign;
+    const updateData: Record<string, any> = { updatedAt: new Date() };
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    // Add more fields here when full edit support is needed.
+
+    await this.db.update(campaigns).set(updateData).where(eq(campaigns.campaignId, campaignId));
+    return this.getCampaign(campaignId);
   }
 
   async listPublished(): Promise<CampaignRecord[]> {
     const now = new Date();
-    if (this.useDb) {
-      const rows = await this.db.select().from(campaigns)
-        .where(
-          and(
-            or(eq(campaigns.status, 'Published'), eq(campaigns.status, 'Active')),
-            gt(campaigns.applicationDeadline, now.toISOString().split('T')[0]),
-          ),
-        )
-        .orderBy(desc(campaigns.createdAt));
-      return rows.map((r: any) => this.mapDbCampaign(r));
+    const rows = await this.db
+      .select()
+      .from(campaigns)
+      .where(
+        and(
+          or(eq(campaigns.status, 'Published'), eq(campaigns.status, 'Active')),
+          gt(campaigns.applicationDeadline, now.toISOString().split('T')[0]),
+        ),
+      )
+      .orderBy(desc(campaigns.createdAt));
+    return rows.map((r: any) => this.mapDbCampaign(r));
+  }
+
+  /**
+   * Look up brand display names for a set of businessIds in one query.
+   * Returns a map keyed by businessId.
+   */
+  async getBrandNames(businessIds: string[]): Promise<Record<string, string>> {
+    if (businessIds.length === 0) return {};
+    const unique = Array.from(new Set(businessIds));
+    const rows = await this.db
+      .select({ businessId: brandProfiles.businessId, name: brandProfiles.name })
+      .from(brandProfiles)
+      .where(inArray(brandProfiles.businessId, unique));
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.businessId] = row.name;
     }
-    const result: CampaignRecord[] = [];
-    for (const campaign of this.memCampaigns.values()) {
-      if (
-        (campaign.status === 'Published' || campaign.status === 'Active') &&
-        new Date(campaign.applicationDeadline) > now
-      ) {
-        result.push(campaign);
-      }
-    }
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return map;
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -211,91 +188,53 @@ export class CampaignsRepository {
     influencerData: { username: string; followerCount: number },
   ): Promise<ApplicationRecord> {
     const applicationId = randomUUID();
-    const now = new Date().toISOString();
-    const record: ApplicationRecord = {
+
+    await this.db.insert(applications).values({
       applicationId,
       campaignId,
       influencerId,
-      ...influencerData,
+      username: influencerData.username,
+      followerCount: influencerData.followerCount,
       status: 'Pending',
-      createdAt: now,
-    };
+    });
 
-    if (this.useDb) {
-      await this.db.insert(applications).values({
-        applicationId,
-        campaignId,
-        influencerId,
-        username: influencerData.username,
-        followerCount: influencerData.followerCount,
-        status: 'Pending',
-      });
-      return record;
-    }
-
-    this.memApplications.set(applicationId, record);
-    return record;
+    return (await this.getApplication(applicationId))!;
   }
 
   async getApplication(applicationId: string): Promise<ApplicationRecord | null> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(applications).where(eq(applications.applicationId, applicationId));
-      if (rows.length === 0) return null;
-      return this.mapDbApplication(rows[0]);
-    }
-    return this.memApplications.get(applicationId) || null;
+    const rows = await this.db.select().from(applications).where(eq(applications.applicationId, applicationId));
+    if (rows.length === 0) return null;
+    return this.mapDbApplication(rows[0]);
   }
 
   async listApplicationsByCampaign(campaignId: string): Promise<ApplicationRecord[]> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(applications).where(eq(applications.campaignId, campaignId));
-      return rows.map((r: any) => this.mapDbApplication(r));
-    }
-    const result: ApplicationRecord[] = [];
-    for (const app of this.memApplications.values()) {
-      if (app.campaignId === campaignId) result.push(app);
-    }
-    return result;
+    const rows = await this.db.select().from(applications).where(eq(applications.campaignId, campaignId));
+    return rows.map((r: any) => this.mapDbApplication(r));
   }
 
   async findApplication(campaignId: string, influencerId: string): Promise<ApplicationRecord | null> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(applications)
-        .where(and(eq(applications.campaignId, campaignId), eq(applications.influencerId, influencerId)));
-      if (rows.length === 0) return null;
-      return this.mapDbApplication(rows[0]);
-    }
-    for (const app of this.memApplications.values()) {
-      if (app.campaignId === campaignId && app.influencerId === influencerId) return app;
-    }
-    return null;
+    const rows = await this.db
+      .select()
+      .from(applications)
+      .where(and(eq(applications.campaignId, campaignId), eq(applications.influencerId, influencerId)));
+    if (rows.length === 0) return null;
+    return this.mapDbApplication(rows[0]);
   }
 
   async listApplicationsByInfluencer(influencerId: string): Promise<ApplicationRecord[]> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(applications)
-        .where(eq(applications.influencerId, influencerId))
-        .orderBy(desc(applications.createdAt));
-      return rows.map((r: any) => this.mapDbApplication(r));
-    }
-    const result: ApplicationRecord[] = [];
-    for (const app of this.memApplications.values()) {
-      if (app.influencerId === influencerId) result.push(app);
-    }
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const rows = await this.db
+      .select()
+      .from(applications)
+      .where(eq(applications.influencerId, influencerId))
+      .orderBy(desc(applications.createdAt));
+    return rows.map((r: any) => this.mapDbApplication(r));
   }
 
   async updateApplication(applicationId: string, data: Partial<ApplicationRecord>): Promise<ApplicationRecord | null> {
-    if (this.useDb) {
-      const updateData: Record<string, any> = {};
-      if (data.status !== undefined) updateData.status = data.status;
-      await this.db.update(applications).set(updateData).where(eq(applications.applicationId, applicationId));
-      return this.getApplication(applicationId);
-    }
-    const app = this.memApplications.get(applicationId);
-    if (!app) return null;
-    Object.assign(app, data);
-    return app;
+    const updateData: Record<string, any> = {};
+    if (data.status !== undefined) updateData.status = data.status;
+    await this.db.update(applications).set(updateData).where(eq(applications.applicationId, applicationId));
+    return this.getApplication(applicationId);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -308,67 +247,38 @@ export class CampaignsRepository {
     data: { contentUrl?: string; contentCaption?: string; notesToBrand?: string; influencerUsername?: string },
   ): Promise<SubmissionRecord> {
     const submissionId = randomUUID();
-    const now = new Date().toISOString();
-    const record: SubmissionRecord = {
+
+    await this.db.insert(submissions).values({
       submissionId,
       campaignId,
       influencerId,
-      ...data,
+      influencerUsername: data.influencerUsername ?? null,
+      contentUrl: data.contentUrl ?? null,
+      contentCaption: data.contentCaption ?? null,
+      notesToBrand: data.notesToBrand ?? null,
       status: 'Pending_Review',
-      createdAt: now,
-    };
+    });
 
-    if (this.useDb) {
-      await this.db.insert(submissions).values({
-        submissionId,
-        campaignId,
-        influencerId,
-        influencerUsername: data.influencerUsername ?? null,
-        contentUrl: data.contentUrl ?? null,
-        contentCaption: data.contentCaption ?? null,
-        notesToBrand: data.notesToBrand ?? null,
-        status: 'Pending_Review',
-      });
-      return record;
-    }
-
-    this.memSubmissions.set(submissionId, record);
-    return record;
+    return (await this.getSubmission(submissionId))!;
   }
 
   async getSubmission(submissionId: string): Promise<SubmissionRecord | null> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(submissions).where(eq(submissions.submissionId, submissionId));
-      if (rows.length === 0) return null;
-      return this.mapDbSubmission(rows[0]);
-    }
-    return this.memSubmissions.get(submissionId) || null;
+    const rows = await this.db.select().from(submissions).where(eq(submissions.submissionId, submissionId));
+    if (rows.length === 0) return null;
+    return this.mapDbSubmission(rows[0]);
   }
 
   async listSubmissionsByCampaign(campaignId: string): Promise<SubmissionRecord[]> {
-    if (this.useDb) {
-      const rows = await this.db.select().from(submissions).where(eq(submissions.campaignId, campaignId));
-      return rows.map((r: any) => this.mapDbSubmission(r));
-    }
-    const result: SubmissionRecord[] = [];
-    for (const sub of this.memSubmissions.values()) {
-      if (sub.campaignId === campaignId) result.push(sub);
-    }
-    return result;
+    const rows = await this.db.select().from(submissions).where(eq(submissions.campaignId, campaignId));
+    return rows.map((r: any) => this.mapDbSubmission(r));
   }
 
   async updateSubmission(submissionId: string, data: Partial<SubmissionRecord>): Promise<SubmissionRecord | null> {
-    if (this.useDb) {
-      const updateData: Record<string, any> = {};
-      if (data.status !== undefined) updateData.status = data.status;
-      if (data.revisionNotes !== undefined) updateData.revisionNotes = data.revisionNotes;
-      await this.db.update(submissions).set(updateData).where(eq(submissions.submissionId, submissionId));
-      return this.getSubmission(submissionId);
-    }
-    const sub = this.memSubmissions.get(submissionId);
-    if (!sub) return null;
-    Object.assign(sub, data);
-    return sub;
+    const updateData: Record<string, any> = {};
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.revisionNotes !== undefined) updateData.revisionNotes = data.revisionNotes;
+    await this.db.update(submissions).set(updateData).where(eq(submissions.submissionId, submissionId));
+    return this.getSubmission(submissionId);
   }
 
   // ══════════════════════════════════════════════════════════════

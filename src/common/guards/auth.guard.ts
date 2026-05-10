@@ -1,7 +1,7 @@
 // ── Auth guard ───────────────────────────────────────────────
-// Validates the session token from Authorization header or query param.
-// Attaches req.user and req.accessToken for downstream use.
-// Routes decorated with @Public() bypass this guard.
+// Validates the session token from Authorization header or query
+// param. Attaches req.accessToken and req.sessionId for downstream
+// use. Routes decorated with @Public() bypass this guard.
 
 import {
   Injectable,
@@ -20,7 +20,7 @@ export class AuthGuard implements CanActivate {
     private readonly sessionService: SessionService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -37,7 +37,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedError('Not authenticated');
     }
 
-    const session = this.sessionService.get(sessionId);
+    const session = await this.sessionService.get(sessionId);
 
     if (!session || !session.accessToken) {
       throw new UnauthorizedError('Not authenticated');
@@ -46,7 +46,7 @@ export class AuthGuard implements CanActivate {
     // Attach to request for downstream use
     request.accessToken = session.accessToken;
     request.sessionId = sessionId;
-    request.user = { sessionId, userId: session.userId };
+    request.user = { sessionId, userId: session.providerUserId };
 
     return true;
   }

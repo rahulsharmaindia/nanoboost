@@ -1,6 +1,10 @@
 // ── Campaigns service ────────────────────────────────────────
-// All campaign business logic: validation, lifecycle, ownership checks,
-// application management, and submission management.
+// All campaign business logic: validation, lifecycle, ownership
+// checks, application management, and submission management.
+//
+// Ownership is resolved via the session (businessId for brands,
+// providerUserId for creators). Brand display names come from the
+// brand_profiles table.
 
 import { Injectable } from '@nestjs/common';
 import { CampaignsRepository } from './campaigns.repository';
@@ -21,7 +25,7 @@ import {
   SubmissionNotFoundError,
   SubmissionForbiddenError,
 } from './campaigns.errors';
-import { ValidationError } from '../../common/errors/app.errors';
+import { UnauthorizedError, ValidationError } from '../../common/errors/app.errors';
 
 @Injectable()
 export class CampaignsService {
@@ -30,6 +34,30 @@ export class CampaignsService {
     private readonly sessionService: SessionService,
     private readonly metaService: MetaService,
   ) {}
+
+  // ── Session helpers ────────────────────────────────────────
+
+  private async requireBrandSession(sessionId: string): Promise<string> {
+    const session = await this.sessionService.get(sessionId);
+    if (!session || !session.businessId) {
+      throw new UnauthorizedError('Not authenticated');
+    }
+    return session.businessId;
+  }
+
+  private async requireCreatorSession(sessionId: string): Promise<{
+    providerUserId: string;
+    accessToken: string;
+  }> {
+    const session = await this.sessionService.get(sessionId);
+    if (!session || !session.providerUserId || !session.accessToken) {
+      throw new UnauthorizedError('Not authenticated');
+    }
+    return {
+      providerUserId: session.providerUserId,
+      accessToken: session.accessToken,
+    };
+  }
 
   // ── Validation ─────────────────────────────────────────────
 
@@ -80,28 +108,28 @@ export class CampaignsService {
 
   async createCampaign(sessionId: string, data: Record<string, any>) {
     this.validateCampaignData(data);
-    const session = this.sessionService.get(sessionId)!;
-    return this.campaignsRepository.createCampaign(session.businessId!, data);
+    const businessId = await this.requireBrandSession(sessionId);
+    return this.campaignsRepository.createCampaign(businessId, data);
   }
 
   async listCampaigns(sessionId: string) {
-    const session = this.sessionService.get(sessionId)!;
-    return this.campaignsRepository.listByBusiness(session.businessId!);
+    const businessId = await this.requireBrandSession(sessionId);
+    return this.campaignsRepository.listByBusiness(businessId);
   }
 
   async getCampaign(sessionId: string, campaignId: string) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
     return campaign;
   }
 
   async updateCampaign(sessionId: string, campaignId: string, data: Record<string, any>) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
     if (campaign.status !== 'Draft') {
@@ -113,9 +141,9 @@ export class CampaignsService {
   }
 
   async updateStatus(sessionId: string, campaignId: string, newStatus: string) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
 
@@ -142,18 +170,18 @@ export class CampaignsService {
   // ── Applications (Brand side) ──────────────────────────────
 
   async listApplications(sessionId: string, campaignId: string) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
     return this.campaignsRepository.listApplicationsByCampaign(campaignId);
   }
 
   async reviewApplication(sessionId: string, campaignId: string, applicationId: string, status: string) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
 
@@ -180,9 +208,9 @@ export class CampaignsService {
   // ── Submissions (Brand side) ───────────────────────────────
 
   async listSubmissions(sessionId: string, campaignId: string) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
 
@@ -212,9 +240,9 @@ export class CampaignsService {
     status: string,
     revisionNotes?: string,
   ) {
-    const session = this.sessionService.get(sessionId)!;
+    const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
-    if (!campaign || campaign.businessId !== session.businessId) {
+    if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
 
@@ -235,21 +263,22 @@ export class CampaignsService {
 
   // ── Marketplace (Influencer side) ──────────────────────────
 
-  async listMarketplace(sessionId: string) {
+  async listMarketplace(_sessionId: string) {
     const published = await this.campaignsRepository.listPublished();
+
+    const businessIds = published.map((c) => c.businessId);
+    const brandNames = await this.campaignsRepository.getBrandNames(businessIds);
 
     const results = [];
     for (const campaign of published) {
-      const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
-      const brandName =
-        ownerSession && ownerSession.session.brandData
-          ? ownerSession.session.brandData.name
-          : 'Unknown Brand';
-
       const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
       const approvedCount = apps.filter((a) => a.status === 'Approved').length;
 
-      results.push({ ...campaign, brandName, approvedCount });
+      results.push({
+        ...campaign,
+        brandName: brandNames[campaign.businessId] ?? 'Unknown Brand',
+        approvedCount,
+      });
     }
     return results;
   }
@@ -262,10 +291,9 @@ export class CampaignsService {
       throw new ValidationError('Campaign is not accepting applications');
     }
 
-    const session = this.sessionService.get(sessionId)!;
-    const influencerId = session.userId!;
+    const { providerUserId } = await this.requireCreatorSession(sessionId);
 
-    const existing = await this.campaignsRepository.findApplication(campaignId, influencerId);
+    const existing = await this.campaignsRepository.findApplication(campaignId, providerUserId);
     if (existing) throw new DuplicateApplicationError();
 
     const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
@@ -276,16 +304,15 @@ export class CampaignsService {
 
     const { username, followerCount } = await this.metaService.getBasicProfile(accessToken);
 
-    return this.campaignsRepository.createApplication(campaignId, influencerId, {
+    return this.campaignsRepository.createApplication(campaignId, providerUserId, {
       username,
       followerCount,
     });
   }
 
   async getMyApplication(sessionId: string, campaignId: string) {
-    const session = this.sessionService.get(sessionId)!;
-    const influencerId = session.userId!;
-    const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
+    const { providerUserId } = await this.requireCreatorSession(sessionId);
+    const application = await this.campaignsRepository.findApplication(campaignId, providerUserId);
     if (!application) throw new ApplicationNotFoundError();
     return application;
   }
@@ -295,40 +322,45 @@ export class CampaignsService {
     campaignId: string,
     data: { contentUrl?: string; contentCaption?: string; notesToBrand?: string },
   ) {
-    const session = this.sessionService.get(sessionId)!;
-    const influencerId = session.userId!;
+    const { providerUserId } = await this.requireCreatorSession(sessionId);
 
-    const application = await this.campaignsRepository.findApplication(campaignId, influencerId);
+    const application = await this.campaignsRepository.findApplication(campaignId, providerUserId);
     if (!application || application.status !== 'Approved') {
       throw new SubmissionForbiddenError();
     }
 
-    return this.campaignsRepository.createSubmission(campaignId, influencerId, data);
+    return this.campaignsRepository.createSubmission(campaignId, providerUserId, data);
   }
 
   async getMyCampaigns(sessionId: string) {
-    const session = this.sessionService.get(sessionId)!;
-    const influencerId = session.userId!;
+    const { providerUserId } = await this.requireCreatorSession(sessionId);
 
-    const myApps = await this.campaignsRepository.listApplicationsByInfluencer(influencerId);
+    const myApps = await this.campaignsRepository.listApplicationsByInfluencer(providerUserId);
+
+    // Fetch campaigns + brand names up front.
+    const campaignMap = new Map<string, Awaited<ReturnType<CampaignsRepository['getCampaign']>>>();
+    for (const app of myApps) {
+      if (!campaignMap.has(app.campaignId)) {
+        campaignMap.set(app.campaignId, await this.campaignsRepository.getCampaign(app.campaignId));
+      }
+    }
+
+    const businessIds = Array.from(campaignMap.values())
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map((c) => c.businessId);
+    const brandNames = await this.campaignsRepository.getBrandNames(businessIds);
 
     const results = [];
     for (const app of myApps) {
-      const campaign = await this.campaignsRepository.getCampaign(app.campaignId);
+      const campaign = campaignMap.get(app.campaignId);
       if (!campaign) continue;
-
-      const ownerSession = this.sessionService.findBy((s) => s.businessId === campaign.businessId);
-      const brandName =
-        ownerSession && ownerSession.session.brandData
-          ? ownerSession.session.brandData.name
-          : 'Unknown Brand';
 
       const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
       const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
 
       results.push({
         ...campaign,
-        brandName,
+        brandName: brandNames[campaign.businessId] ?? 'Unknown Brand',
         approvedCount,
         applicationStatus: app.status,
         applicationId: app.applicationId,

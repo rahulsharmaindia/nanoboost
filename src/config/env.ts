@@ -38,7 +38,6 @@ export const env = {
   geminiApiKey: getEnvOptional('GEMINI_API_KEY'),
   geminiModel: getEnvOptional('GEMINI_MODEL', 'gemini-2.0-flash'),
 
-  // Session (in-memory store TTL)
+  // Session TTL (applied when rows are inserted into the sessions table)
   sessionTtlMs: 60 * 60 * 1000,
-  sessionCleanupIntervalMs: 30 * 60 * 1000,
 };

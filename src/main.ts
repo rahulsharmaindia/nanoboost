@@ -10,6 +10,13 @@ import { getCorsOptions } from './config/cors';
 import { env } from './config/env';
 
 async function bootstrap() {
+  if (!env.databaseUrl) {
+    console.error(
+      '❌ DATABASE_URL is not set. This server persists all data — including sessions — to Postgres and cannot run without it.',
+    );
+    process.exit(1);
+  }
+
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
@@ -37,7 +44,7 @@ async function bootstrap() {
   console.log(`App ID loaded: ${env.instagramAppId ? 'yes' : '❌ MISSING'}`);
   console.log(`App Secret loaded: ${env.instagramAppSecret ? 'yes' : '❌ MISSING'}`);
   console.log(`Gemini API key loaded: ${env.geminiApiKey ? 'yes' : '⚠️  NOT SET (AI features disabled)'}`);
-  console.log(`Database URL loaded: ${env.databaseUrl ? 'yes' : '⚠️  NOT SET (in-memory mode)'}`);
+  console.log(`Database URL loaded: yes`);
 }
 
 bootstrap().catch((err) => {
