@@ -20,9 +20,9 @@ export function getDrizzleClient() {
 
     const config: PoolConfig = { connectionString: env.databaseUrl };
 
-    // Supabase requires SSL on both the pooler (6543) and direct (5432)
-    // endpoints. Accept self-signed to avoid certificate bundling in
-    // deployment targets.
+    // Supabase requires SSL on every reachable endpoint (direct 5432,
+    // session pooler 5432, transaction pooler 6543). Accept self-signed
+    // to avoid bundling Supabase's CA in every deploy target.
     if (env.databaseUrl.includes('supabase')) {
       config.ssl = { rejectUnauthorized: false };
     }

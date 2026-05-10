@@ -36,11 +36,18 @@ export async function probeDatabase(db: any): Promise<void> {
       `Connected to database="${row.db}" host="${row.host ?? 'unknown'}" schema="${row.schema}"`,
     );
 
+    // IN (...) is portable and avoids the Drizzle array-binding quirk
+    // where `ANY(${jsArray})` spreads into a tuple of individual params.
+    const tableList = sql.join(
+      REQUIRED_TABLES.map((t) => sql`${t}`),
+      sql`, `,
+    );
+
     const presence = await db.execute(sql`
       SELECT table_name
         FROM information_schema.tables
        WHERE table_schema = 'public'
-         AND table_name = ANY (${REQUIRED_TABLES})
+         AND table_name IN (${tableList})
     `);
     const rows = presence.rows ?? presence;
     const found = new Set<string>(rows.map((r: any) => r.table_name));
