@@ -5,12 +5,13 @@
 
 import { Global, Module } from '@nestjs/common';
 import { SessionService } from './services/session.service';
+import { TokenCipher } from './services/token-cipher.service';
 import { AuthGuard } from './guards/auth.guard';
 import { BrandAuthGuard } from './guards/brand-auth.guard';
 
 @Global()
 @Module({
-  providers: [SessionService, AuthGuard, BrandAuthGuard],
-  exports: [SessionService, AuthGuard, BrandAuthGuard],
+  providers: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
+  exports: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
 })
 export class CommonModule {}

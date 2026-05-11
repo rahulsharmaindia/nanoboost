@@ -21,6 +21,7 @@ import { campaigns } from '../src/database/schema/campaigns.schema';
 import { applications } from '../src/database/schema/proposals.schema';
 import { submissions } from '../src/database/schema/collaborations.schema';
 import { SessionService } from '../src/common/services/session.service';
+import { TokenCipher } from '../src/common/services/token-cipher.service';
 import { CampaignsRepository } from '../src/modules/campaigns/campaigns.repository';
 
 type Color = 'green' | 'red' | 'yellow' | 'dim';
@@ -91,7 +92,9 @@ async function main() {
     // ── SessionService ───────────────────────────────────────
     console.log(paint('yellow', 'SessionService'));
 
-    const sessionService = new SessionService(db);
+    const cipher = new TokenCipher();
+    cipher.onModuleInit();
+    const sessionService = new SessionService(db, cipher);
     let creatorSessId = '';
     let brandSessId = '';
 

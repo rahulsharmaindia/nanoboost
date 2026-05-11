@@ -3,6 +3,17 @@
 // of an OAuth flow or brand login and carries the access token /
 // businessId that the guards use to authorize requests.
 //
+// Creator sessions additionally track:
+//   - tokenExpiresAt  — when the Instagram long-lived token itself
+//                       dies (~60 days from exchange/refresh).
+//   - lastRefreshedAt — last successful Meta refresh call, used to
+//                       honour Meta's "must be ≥24h old before you
+//                       can refresh" rule.
+//
+// Tokens are encrypted at rest via TokenCipher (AES-256-GCM).
+// Consumers always see plaintext — encryption is invisible above
+// the session service boundary.
+//
 // No in-memory fallback: the server requires DATABASE_URL to be
 // set. If it is not, startup will fail when the session service
 // tries to run its first query.
@@ -12,6 +23,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { sessions } from '../../database/schema/sessions.schema';
 import { env } from '../../config/env';
+import { TokenCipher } from './token-cipher.service';
 
 export interface SessionRecord {
   sessionId: string;
@@ -21,6 +33,8 @@ export interface SessionRecord {
   status: 'pending' | 'authenticated' | 'error';
   createdAt: Date;
   expiresAt: Date;
+  tokenExpiresAt: Date | null;
+  lastRefreshedAt: Date | null;
 }
 
 export interface CreateSessionInput {
@@ -28,6 +42,7 @@ export interface CreateSessionInput {
   providerUserId?: string | null;
   businessId?: string | null;
   status?: 'pending' | 'authenticated' | 'error';
+  tokenExpiresAt?: Date | null;
 }
 
 export interface UpdateSessionInput {
@@ -35,11 +50,20 @@ export interface UpdateSessionInput {
   providerUserId?: string | null;
   businessId?: string | null;
   status?: 'pending' | 'authenticated' | 'error';
+  tokenExpiresAt?: Date | null;
+  lastRefreshedAt?: Date | null;
+  // When true, rolls the session-level TTL forward by sessionTtlMs.
+  // Use after a successful token refresh so active users don't get
+  // kicked out once the original expiresAt lapses.
+  rollExpiresAt?: boolean;
 }
 
 @Injectable()
 export class SessionService {
-  constructor(@Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any) {}
+  constructor(
+    @Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any,
+    private readonly cipher: TokenCipher,
+  ) {}
 
   private requireDb(): any {
     if (!this.db) {
@@ -50,15 +74,22 @@ export class SessionService {
     return this.db;
   }
 
+  private toDate(v: unknown): Date | null {
+    if (v == null) return null;
+    return v instanceof Date ? v : new Date(v as any);
+  }
+
   private mapRow(row: any): SessionRecord {
     return {
       sessionId: row.sessionId,
-      accessToken: row.accessToken ?? null,
+      accessToken: this.cipher.decrypt(row.accessToken ?? null),
       providerUserId: row.providerUserId ?? null,
       businessId: row.businessId ?? null,
       status: row.status,
-      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
-      expiresAt: row.expiresAt instanceof Date ? row.expiresAt : new Date(row.expiresAt),
+      createdAt: this.toDate(row.createdAt) ?? new Date(),
+      expiresAt: this.toDate(row.expiresAt) ?? new Date(),
+      tokenExpiresAt: this.toDate(row.tokenExpiresAt),
+      lastRefreshedAt: this.toDate(row.lastRefreshedAt),
     };
   }
 
@@ -68,10 +99,11 @@ export class SessionService {
     const [row] = await db
       .insert(sessions)
       .values({
-        accessToken: input.accessToken ?? null,
+        accessToken: this.cipher.encrypt(input.accessToken ?? null),
         providerUserId: input.providerUserId ?? null,
         businessId: input.businessId ?? null,
         status: input.status ?? 'pending',
+        tokenExpiresAt: input.tokenExpiresAt ?? null,
         expiresAt,
       })
       .returning({ sessionId: sessions.sessionId });
@@ -95,10 +127,17 @@ export class SessionService {
   async update(sessionId: string, patch: UpdateSessionInput): Promise<SessionRecord | null> {
     const db = this.requireDb();
     const updateData: Record<string, any> = {};
-    if (patch.accessToken !== undefined) updateData.accessToken = patch.accessToken;
+    if (patch.accessToken !== undefined) {
+      updateData.accessToken = this.cipher.encrypt(patch.accessToken);
+    }
     if (patch.providerUserId !== undefined) updateData.providerUserId = patch.providerUserId;
     if (patch.businessId !== undefined) updateData.businessId = patch.businessId;
     if (patch.status !== undefined) updateData.status = patch.status;
+    if (patch.tokenExpiresAt !== undefined) updateData.tokenExpiresAt = patch.tokenExpiresAt;
+    if (patch.lastRefreshedAt !== undefined) updateData.lastRefreshedAt = patch.lastRefreshedAt;
+    if (patch.rollExpiresAt) {
+      updateData.expiresAt = new Date(Date.now() + env.sessionTtlMs);
+    }
 
     if (Object.keys(updateData).length === 0) {
       return this.get(sessionId);

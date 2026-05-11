@@ -57,13 +57,25 @@ export class AuthService {
         ? tokenData.data[0].user_id
         : tokenData.user_id;
 
-      // Exchange for long-lived token (60 days)
-      const accessToken = await this.metaService.exchangeForLongLivedToken(shortLivedToken);
+      // Exchange for long-lived token (60 days). We capture the exact
+      // `expires_in` so the session's tokenExpiresAt matches Meta's
+      // view of the world; if Meta didn't return it we fall back to
+      // the documented 60-day default.
+      const { accessToken, expiresIn } =
+        await this.metaService.exchangeForLongLivedToken(shortLivedToken);
+
+      const ttlMs =
+        expiresIn != null ? expiresIn * 1000 : env.instagramLongLivedTokenTtlMs;
+      const tokenExpiresAt = new Date(Date.now() + ttlMs);
 
       await this.sessionService.update(state, {
         accessToken,
         providerUserId: String(userId),
         status: 'authenticated',
+        tokenExpiresAt,
+        // Session TTL already matches the token TTL (60d in env).
+        // Roll forward so the clock starts from successful login.
+        rollExpiresAt: true,
       });
 
       this.logger.log(`Authenticated user ${userId}`);

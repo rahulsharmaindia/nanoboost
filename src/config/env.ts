@@ -38,6 +38,28 @@ export const env = {
   geminiApiKey: getEnvOptional('GEMINI_API_KEY'),
   geminiModel: getEnvOptional('GEMINI_MODEL', 'gemini-2.0-flash'),
 
-  // Session TTL (applied when rows are inserted into the sessions table)
-  sessionTtlMs: 60 * 60 * 1000,
+  // ── Session & token lifetimes ──────────────────────────────
+  // Creator sessions are pinned to the lifetime of the Instagram
+  // long-lived token (60 days). The auth guard auto-refreshes the
+  // token in the background when it gets close to expiry, which
+  // extends both the token and the session expiry forward.
+  //
+  // Brand sessions reuse the same TTL for convenience.
+  sessionTtlMs: 60 * 24 * 60 * 60 * 1000,          // 60 days
+
+  // Instagram long-lived token lifetime (Meta spec: 60 days).
+  instagramLongLivedTokenTtlMs: 60 * 24 * 60 * 60 * 1000,
+
+  // Refresh window: proactively refresh a long-lived token if it
+  // is within this many days of expiry. Meta also requires the
+  // token to be at least 24 hours old before it can be refreshed.
+  instagramTokenRefreshWindowMs: 7 * 24 * 60 * 60 * 1000,  // 7 days
+  instagramTokenMinAgeForRefreshMs: 24 * 60 * 60 * 1000,   // 24 hours
+
+  // ── Token encryption at rest ───────────────────────────────
+  // 32-byte key (hex or base64-encoded) used to AES-256-GCM-encrypt
+  // Instagram access tokens before storing them in Postgres.
+  // In production this MUST be set. In development the app logs a
+  // warning and falls back to plaintext so local dev still works.
+  tokenEncryptionKey: getEnvOptional('TOKEN_ENCRYPTION_KEY'),
 };
