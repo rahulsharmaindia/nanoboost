@@ -11,11 +11,37 @@ import { Public } from '../../common/decorators/public.decorator';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /// In-memory map of sessionId → web redirect URI.
+  /// Populated when a web client starts OAuth, consumed in the callback.
+  /// This avoids a DB schema change — the entry lives only for the
+  /// duration of the OAuth flow (seconds to minutes).
+  private webRedirects = new Map<string, string>();
+
+  private buildRedirectUrl(sessionId: string, params: string): string {
+    const webUri = this.webRedirects.get(sessionId);
+    if (webUri) {
+      this.webRedirects.delete(sessionId);
+      // Redirect back to the PWA with query params
+      const separator = webUri.includes('?') ? '&' : '?';
+      return `${webUri}${separator}${params}`;
+    }
+    // Mobile: use custom scheme
+    return `iginsights://auth?${params}`;
+  }
+
   // GET /api/auth/start
   @Public()
   @Get('api/auth/start')
-  async startOAuth() {
+  async startOAuth(
+    @Query('platform') platform?: string,
+    @Query('web_redirect_uri') webRedirectUri?: string,
+  ) {
     const { sessionId, authUrl } = await this.authService.startOAuth();
+    // Store the web redirect URI so the callback knows where to send
+    // the user back to after OAuth completes.
+    if (platform === 'web' && webRedirectUri) {
+      this.webRedirects.set(sessionId, webRedirectUri);
+    }
     return { session_id: sessionId, auth_url: authUrl };
   }
 
@@ -31,20 +57,20 @@ export class AuthController {
   ) {
     if (error) {
       return res.redirect(
-        `iginsights://auth?status=error&session_id=${state}&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`,
+        this.buildRedirectUrl(state || '', `status=error&session_id=${state}&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`),
       );
     }
 
     if (!state) {
       return res.redirect(
-        `iginsights://auth?status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
+        this.buildRedirectUrl('', `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`),
       );
     }
 
     const existing = await this.authService.getStatus(state);
     if (existing.status === 'not_found') {
       return res.redirect(
-        `iginsights://auth?status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
+        this.buildRedirectUrl(state, `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`),
       );
     }
 
@@ -53,11 +79,13 @@ export class AuthController {
 
     if (result.status === 'error') {
       return res.redirect(
-        `iginsights://auth?status=error&session_id=${state}&reason=${encodeURIComponent('Authentication failed')}`,
+        this.buildRedirectUrl(state, `status=error&session_id=${state}&reason=${encodeURIComponent('Authentication failed')}`),
       );
     }
 
-    return res.redirect(`iginsights://auth?status=authenticated&session_id=${state}`);
+    return res.redirect(
+      this.buildRedirectUrl(state, `status=authenticated&session_id=${state}`),
+    );
   }
 
   // GET /api/auth/status
