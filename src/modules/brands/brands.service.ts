@@ -15,6 +15,7 @@ import { brandCredentials } from '../../database/schema/brand-credentials.schema
 import { users } from '../../database/schema/users.schema';
 import { RegisterBrandDto } from './dto/register-brand.dto';
 import { LoginBrandDto } from './dto/login-brand.dto';
+import { UpdateBrandDto } from './dto/update-brand.dto';
 import {
   ConflictError,
   UnauthorizedError,
@@ -181,5 +182,77 @@ export class BrandsService {
     }
 
     return this.toResponse(rows[0]);
+  }
+
+  // ── Update profile ─────────────────────────────────────────
+  //
+  // Partial update of the authenticated brand's own profile.
+  // businessId and password cannot be changed here — they need
+  // dedicated flows. Empty strings on optional fields are normalised
+  // to null so callers can clear a previously-set value.
+  async updateProfile(
+    sessionId: string,
+    dto: UpdateBrandDto,
+  ): Promise<BrandResponseData> {
+    const session = await this.sessionService.get(sessionId);
+    if (!session || !session.businessId) {
+      throw new NotFoundError('No brand registered');
+    }
+
+    const update: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (trimmed.length === 0) {
+        throw new ConflictError('Brand name cannot be empty');
+      }
+      update.name = trimmed;
+    }
+    if (dto.industry !== undefined) {
+      const trimmed = dto.industry.trim();
+      if (trimmed.length === 0) {
+        throw new ConflictError('Industry cannot be empty');
+      }
+      update.industry = trimmed;
+    }
+    if (dto.logo !== undefined) {
+      update.logo = dto.logo.trim().length > 0 ? dto.logo : null;
+    }
+    if (dto.website !== undefined) {
+      update.website = dto.website.trim().length > 0 ? dto.website.trim() : null;
+    }
+    if (dto.description !== undefined) {
+      update.description =
+        dto.description.trim().length > 0 ? dto.description.trim() : null;
+    }
+    if (dto.socialLinks !== undefined) {
+      // Strip empty values so the stored JSON only contains real links.
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(dto.socialLinks ?? {})) {
+        if (typeof v === 'string' && v.trim().length > 0) {
+          cleaned[k] = v.trim();
+        }
+      }
+      update.socialLinks =
+        Object.keys(cleaned).length > 0 ? JSON.stringify(cleaned) : null;
+    }
+
+    await this.db
+      .update(brandProfiles)
+      .set(update)
+      .where(eq(brandProfiles.businessId, session.businessId));
+
+    const [updated] = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, session.businessId));
+
+    if (!updated) {
+      throw new NotFoundError('No brand registered');
+    }
+
+    return this.toResponse(updated);
   }
 }

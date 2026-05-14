@@ -1,10 +1,11 @@
 // ── Brands controller ────────────────────────────────────────
 
-import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { BrandsService } from './brands.service';
 import { RegisterBrandDto } from './dto/register-brand.dto';
 import { LoginBrandDto } from './dto/login-brand.dto';
+import { UpdateBrandDto } from './dto/update-brand.dto';
 import { BrandAuthGuard } from '../../common/guards/brand-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -31,5 +32,12 @@ export class BrandsController {
   @Get()
   getProfile(@Req() req: Request) {
     return this.brandsService.getProfile((req as any).sessionId);
+  }
+
+  // PATCH /api/brand
+  @UseGuards(BrandAuthGuard)
+  @Patch()
+  updateProfile(@Req() req: Request, @Body() dto: UpdateBrandDto) {
+    return this.brandsService.updateProfile((req as any).sessionId, dto);
   }
 }
