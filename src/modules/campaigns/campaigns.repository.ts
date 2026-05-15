@@ -136,10 +136,47 @@ export class CampaignsRepository {
 
   async updateCampaign(campaignId: string, data: Record<string, any>): Promise<CampaignRecord | null> {
     const updateData: Record<string, any> = { updatedAt: new Date() };
-    if (data.status !== undefined) updateData.status = data.status;
-    if (data.title !== undefined) updateData.title = data.title;
-    if (data.description !== undefined) updateData.description = data.description;
-    // Add more fields here when full edit support is needed.
+
+    // Simple scalar fields
+    const scalarFields = [
+      'status', 'title', 'description', 'objective', 'campaignType', 'platform',
+      'contentCountPerInfluencer', 'captionGuidelines', 'handleToTag',
+      'ageGroupMin', 'ageGroupMax', 'gender', 'targetLocation',
+      'languagePreference', 'paymentModel', 'productDetails', 'bonusCriteria',
+      'performanceIncentive', 'startDate', 'endDate', 'applicationDeadline',
+      'submissionDeadline', 'contentDeadline', 'revisionAllowedCount',
+      'reviewTurnaroundHours', 'postingTimeWindow', 'minimumFollowers',
+      'preferredNiche', 'contentStyleExpectations', 'audienceGenderRatio',
+      'totalSlots', 'reserveSlots', 'guidelinesDos', 'guidelinesDonts',
+      'brandMessaging', 'approvalProcessDescription', 'autoApproveAfterHours',
+    ];
+    for (const field of scalarFields) {
+      if (data[field] !== undefined) updateData[field] = data[field];
+    }
+
+    // Numeric/decimal fields stored as strings
+    if (data.totalBudget !== undefined) updateData.totalBudget = String(data.totalBudget);
+    if (data.budgetPerCreator !== undefined) updateData.budgetPerCreator = String(data.budgetPerCreator);
+    if (data.commissionRate !== undefined) {
+      updateData.commissionRate = data.commissionRate != null ? String(data.commissionRate) : null;
+    }
+    if (data.requiredEngagementRate !== undefined) {
+      updateData.requiredEngagementRate = String(data.requiredEngagementRate);
+    }
+    if (data.requireApproval !== undefined) {
+      updateData.requireApproval = data.requireApproval != null ? String(data.requireApproval) : null;
+    }
+
+    // JSON fields
+    const jsonFields = [
+      'postTypes', 'deliverables', 'hashtags', 'mentions',
+      'referenceImages', 'interests', 'priorityInviteList',
+    ];
+    for (const field of jsonFields) {
+      if (data[field] !== undefined) {
+        updateData[field] = data[field] != null ? JSON.stringify(data[field]) : null;
+      }
+    }
 
     await this.db.update(campaigns).set(updateData).where(eq(campaigns.campaignId, campaignId));
     return this.getCampaign(campaignId);
