@@ -178,6 +178,36 @@ export class CampaignsService {
     return this.campaignsRepository.listApplicationsByCampaign(campaignId);
   }
 
+  /**
+   * Returns all campaigns owned by the authenticated brand where the given
+   * creator has applied or been approved, along with their application status.
+   */
+  async getCreatorCampaignsForBrand(sessionId: string, creatorId: string) {
+    const businessId = await this.requireBrandSession(sessionId);
+
+    // Get all campaigns for this brand
+    const brandCampaigns = await this.campaignsRepository.listByBusiness(businessId);
+
+    // For each campaign, check if the creator has an application
+    const results = [];
+    for (const campaign of brandCampaigns) {
+      const application = await this.campaignsRepository.findApplication(
+        campaign.campaignId,
+        creatorId,
+      );
+      if (application) {
+        results.push({
+          ...campaign,
+          applicationStatus: application.status,
+          applicationId: application.applicationId,
+          appliedAt: application.createdAt,
+        });
+      }
+    }
+
+    return results;
+  }
+
   async reviewApplication(sessionId: string, campaignId: string, applicationId: string, status: string) {
     const businessId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
@@ -263,7 +293,7 @@ export class CampaignsService {
 
   // ── Marketplace (Influencer side) ──────────────────────────
 
-  async listMarketplace(_sessionId: string, niche?: string) {
+  async listMarketplace(_sessionId: string, niche?: string, brand?: string) {
     const published = await this.campaignsRepository.listPublished();
 
     const businessIds = published.map((c) => c.businessId);
@@ -281,20 +311,30 @@ export class CampaignsService {
       });
     }
 
+    let filtered = results;
+
+    // Filter by brand name if provided.
+    if (brand) {
+      const brandLower = brand.toLowerCase();
+      filtered = filtered.filter((c) => {
+        const campaignBrand = (c.brandName || '').toLowerCase();
+        return campaignBrand === brandLower;
+      });
+    }
+
     // If niche filter provided, only show matching campaigns.
     // Campaigns with no preferredNiche are always included (they're
     // open to all creators).
     if (niche) {
       const nicheList = niche.split(',').map((n) => n.trim().toLowerCase());
-      const filtered = results.filter((c) => {
+      filtered = filtered.filter((c) => {
         const campaignNiche = (c.preferredNiche || '').toLowerCase();
         if (!campaignNiche) return true; // no niche = open to all
         return nicheList.includes(campaignNiche);
       });
-      return filtered;
     }
 
-    return results;
+    return filtered;
   }
 
   async applyToCampaign(sessionId: string, campaignId: string, accessToken: string) {

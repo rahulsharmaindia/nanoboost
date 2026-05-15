@@ -1,12 +1,13 @@
 // ── Brands controller ────────────────────────────────────────
 
-import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { BrandsService } from './brands.service';
 import { RegisterBrandDto } from './dto/register-brand.dto';
 import { LoginBrandDto } from './dto/login-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
 import { BrandAuthGuard } from '../../common/guards/brand-auth.guard';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('api/brand')
@@ -39,5 +40,12 @@ export class BrandsController {
   @Patch()
   updateProfile(@Req() req: Request, @Body() dto: UpdateBrandDto) {
     return this.brandsService.updateProfile((req as any).sessionId, dto);
+  }
+
+  // GET /api/brands/:businessId — public brand info for influencers
+  @UseGuards(AuthGuard)
+  @Get(':businessId')
+  getBrandPublicProfile(@Param('businessId') businessId: string) {
+    return this.brandsService.getPublicProfile(businessId);
   }
 }

@@ -70,6 +70,18 @@ export class CampaignsController {
   }
 
   @UseGuards(BrandAuthGuard)
+  @Get('api/creators/:creatorId/campaigns')
+  getCreatorCampaigns(
+    @Req() req: Request,
+    @Param('creatorId') creatorId: string,
+  ) {
+    return this.campaignsService.getCreatorCampaignsForBrand(
+      (req as any).sessionId,
+      creatorId,
+    );
+  }
+
+  @UseGuards(BrandAuthGuard)
   @Patch('api/campaigns/:campaignId/applications/:applicationId')
   reviewApplication(
     @Req() req: Request,
@@ -112,8 +124,8 @@ export class CampaignsController {
 
   @UseGuards(AuthGuard)
   @Get('api/marketplace/campaigns')
-  listMarketplace(@Req() req: Request, @Query('niche') niche?: string) {
-    return this.campaignsService.listMarketplace((req as any).sessionId, niche);
+  listMarketplace(@Req() req: Request, @Query('niche') niche?: string, @Query('brand') brand?: string) {
+    return this.campaignsService.listMarketplace((req as any).sessionId, niche, brand);
   }
 
   @UseGuards(AuthGuard)

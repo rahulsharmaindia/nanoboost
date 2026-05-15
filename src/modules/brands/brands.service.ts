@@ -184,6 +184,21 @@ export class BrandsService {
     return this.toResponse(rows[0]);
   }
 
+  // ── Public profile (for influencers) ─────────────────────────
+
+  async getPublicProfile(businessId: string): Promise<BrandResponseData> {
+    const rows = await this.db
+      .select()
+      .from(brandProfiles)
+      .where(eq(brandProfiles.businessId, businessId));
+
+    if (rows.length === 0) {
+      throw new NotFoundError('Brand not found');
+    }
+
+    return this.toResponse(rows[0]);
+  }
+
   // ── Update profile ─────────────────────────────────────────
   //
   // Partial update of the authenticated brand's own profile.
