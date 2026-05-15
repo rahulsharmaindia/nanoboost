@@ -143,7 +143,9 @@ export class CampaignsService {
     if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
-    if (campaign.status !== 'Draft') {
+    // Editing is blocked only for terminal lifecycle states.
+    const terminalStates = ['Completed', 'Cancelled', 'Archived'];
+    if (terminalStates.includes(campaign.status)) {
       throw new CampaignNotEditableError();
     }
     const merged = { ...campaign, ...data };
@@ -188,7 +190,7 @@ export class CampaignsService {
     }
     return this.campaignsRepository.listApplicationsByCampaign(campaignId);
   }
-
+rand
   /**
    * Returns all campaigns owned by the authenticated brand where the given
    * creator has applied or been approved, along with their application status.
