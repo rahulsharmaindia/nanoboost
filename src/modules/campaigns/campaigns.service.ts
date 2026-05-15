@@ -281,14 +281,17 @@ export class CampaignsService {
       });
     }
 
-    // Sort niche-matching campaigns first (recommended)
+    // If niche filter provided, only show matching campaigns.
+    // Campaigns with no preferredNiche are always included (they're
+    // open to all creators).
     if (niche) {
       const nicheList = niche.split(',').map((n) => n.trim().toLowerCase());
-      results.sort((a, b) => {
-        const aMatch = nicheList.includes((a.preferredNiche || '').toLowerCase()) ? 0 : 1;
-        const bMatch = nicheList.includes((b.preferredNiche || '').toLowerCase()) ? 0 : 1;
-        return aMatch - bMatch;
+      const filtered = results.filter((c) => {
+        const campaignNiche = (c.preferredNiche || '').toLowerCase();
+        if (!campaignNiche) return true; // no niche = open to all
+        return nicheList.includes(campaignNiche);
       });
+      return filtered;
     }
 
     return results;
