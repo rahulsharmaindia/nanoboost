@@ -10,6 +10,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -111,8 +112,8 @@ export class CampaignsController {
 
   @UseGuards(AuthGuard)
   @Get('api/marketplace/campaigns')
-  listMarketplace(@Req() req: Request) {
-    return this.campaignsService.listMarketplace((req as any).sessionId);
+  listMarketplace(@Req() req: Request, @Query('niche') niche?: string) {
+    return this.campaignsService.listMarketplace((req as any).sessionId, niche);
   }
 
   @UseGuards(AuthGuard)

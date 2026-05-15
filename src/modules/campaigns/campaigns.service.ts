@@ -263,7 +263,7 @@ export class CampaignsService {
 
   // ── Marketplace (Influencer side) ──────────────────────────
 
-  async listMarketplace(_sessionId: string) {
+  async listMarketplace(_sessionId: string, niche?: string) {
     const published = await this.campaignsRepository.listPublished();
 
     const businessIds = published.map((c) => c.businessId);
@@ -280,6 +280,17 @@ export class CampaignsService {
         approvedCount,
       });
     }
+
+    // Sort niche-matching campaigns first (recommended)
+    if (niche) {
+      const nicheList = niche.split(',').map((n) => n.trim().toLowerCase());
+      results.sort((a, b) => {
+        const aMatch = nicheList.includes((a.preferredNiche || '').toLowerCase()) ? 0 : 1;
+        const bMatch = nicheList.includes((b.preferredNiche || '').toLowerCase()) ? 0 : 1;
+        return aMatch - bMatch;
+      });
+    }
+
     return results;
   }
 

@@ -19,10 +19,29 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // Confirm we can reach the target DB and the expected schema exists
-  // before accepting traffic. Fails fast with a clear error in the
-  // deployment logs instead of every request returning a 500.
-  await probeDatabase(getDrizzleClient());
+  // Log the configured DB host at boot — without credentials — so
+  // deployment issues like "I changed the env var but the container
+  // is still hitting the old host" are immediately diagnosable.
+  try {
+    const u = new URL(env.databaseUrl);
+    console.log(
+      `Database target: host="${u.hostname}" port="${u.port || '5432'}" db="${u.pathname.replace(/^\//, '')}"`,
+    );
+  } catch {
+    console.warn('DATABASE_URL is not a parseable URL');
+  }
+
+  // Run the schema probe but never block the listener on it. A DNS
+  // blip, a Supabase reboot, or a stale env value should not put the
+  // container into an unrecoverable deploy loop. The /health endpoint
+  // surfaces DB liveness so Railway's healthcheck can still gate
+  // traffic correctly.
+  probeDatabase(getDrizzleClient()).catch((err) => {
+    console.error(
+      'Database probe failed at boot — server will continue, /health will report unhealthy. ' +
+        `Cause: ${(err as Error).message}`,
+    );
+  });
 
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],

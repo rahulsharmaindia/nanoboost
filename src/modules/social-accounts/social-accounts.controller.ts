@@ -1,8 +1,7 @@
 // ── Social accounts controller ───────────────────────────────
-// Profile, media, and insights endpoints for authenticated creators.
-// All routes require Instagram session auth (accessToken in session).
+// Profile, media, insights, and niche endpoints for creators.
 
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Query, Body, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { SocialAccountsService } from './social-accounts.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -15,7 +14,29 @@ export class SocialAccountsController {
   // GET /api/profile
   @Get('api/profile')
   async getProfile(@Req() req: Request) {
-    return this.socialAccountsService.getProfile((req as any).accessToken);
+    return this.socialAccountsService.getProfile(
+      (req as any).accessToken,
+      (req as any).providerUserId,
+    );
+  }
+
+  // GET /api/profile/niches
+  @Get('api/profile/niches')
+  async getNiches(@Req() req: Request) {
+    const niches = await this.socialAccountsService.getNiches(
+      (req as any).providerUserId,
+    );
+    return { niches };
+  }
+
+  // PATCH /api/profile/niches
+  @Patch('api/profile/niches')
+  async updateNiches(@Req() req: Request, @Body() body: { niches: string[] }) {
+    const niches = await this.socialAccountsService.updateNiches(
+      (req as any).providerUserId,
+      body.niches || [],
+    );
+    return { niches };
   }
 
   // GET /api/media
@@ -27,9 +48,7 @@ export class SocialAccountsController {
   // GET /api/media/insights?media_id=
   @Get('api/media/insights')
   async getMediaInsights(@Req() req: Request, @Query('media_id') mediaId: string) {
-    if (!mediaId) {
-      return { error: 'Missing media_id' };
-    }
+    if (!mediaId) return { error: 'Missing media_id' };
     return this.socialAccountsService.getMediaInsights((req as any).accessToken, mediaId);
   }
 

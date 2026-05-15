@@ -62,6 +62,7 @@ export class AuthGuard implements CanActivate {
     // Attach to request for downstream use
     request.accessToken = accessToken;
     request.sessionId = sessionId;
+    request.providerUserId = session.providerUserId;
     request.user = { sessionId, userId: session.providerUserId };
 
     return true;
