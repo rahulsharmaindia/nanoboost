@@ -21,6 +21,7 @@ import { MetaModule } from './modules/meta/meta.module';
 import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { CreatorsModule } from './modules/creators/creators.module';
 import { AiModule } from './modules/ai/ai.module';
 
 @Module({
@@ -34,6 +35,7 @@ import { AiModule } from './modules/ai/ai.module';
     SocialAccountsModule,
     BrandsModule,
     CampaignsModule,
+    CreatorsModule,
     AiModule,
   ],
   providers: [
