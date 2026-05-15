@@ -12,3 +12,4 @@ export * from './collaborations.schema';
 export * from './social-accounts.schema';
 export * from './account-deletion.schema';
 export * from './sessions.schema';
+export * from './follows.schema';

@@ -116,14 +116,13 @@ export class CampaignsService {
     const businessId = await this.requireBrandSession(sessionId);
     const campaignList = await this.campaignsRepository.listByBusiness(businessId);
 
-    // Compute approvedCount for each campaign by counting approved applications.
-    const results = [];
-    for (const campaign of campaignList) {
-      const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
-      const approvedCount = apps.filter((a) => a.status === 'Approved').length;
-      results.push({ ...campaign, approvedCount });
-    }
-    return results;
+    const approvedCounts = await this.campaignsRepository.getApprovedCounts(
+      campaignList.map((c) => c.campaignId),
+    );
+    return campaignList.map((campaign) => ({
+      ...campaign,
+      approvedCount: approvedCounts[campaign.campaignId] ?? 0,
+    }));
   }
 
   async getCampaign(sessionId: string, campaignId: string) {
@@ -190,7 +189,7 @@ export class CampaignsService {
     }
     return this.campaignsRepository.listApplicationsByCampaign(campaignId);
   }
-rand
+
   /**
    * Returns all campaigns owned by the authenticated brand where the given
    * creator has applied or been approved, along with their application status.
@@ -311,18 +310,15 @@ rand
 
     const businessIds = published.map((c) => c.businessId);
     const brandNames = await this.campaignsRepository.getBrandNames(businessIds);
+    const approvedCounts = await this.campaignsRepository.getApprovedCounts(
+      published.map((c) => c.campaignId),
+    );
 
-    const results = [];
-    for (const campaign of published) {
-      const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
-      const approvedCount = apps.filter((a) => a.status === 'Approved').length;
-
-      results.push({
-        ...campaign,
-        brandName: brandNames[campaign.businessId] ?? 'Unknown Brand',
-        approvedCount,
-      });
-    }
+    const results = published.map((campaign) => ({
+      ...campaign,
+      brandName: brandNames[campaign.businessId] ?? 'Unknown Brand',
+      approvedCount: approvedCounts[campaign.campaignId] ?? 0,
+    }));
 
     let filtered = results;
 
@@ -341,7 +337,7 @@ rand
     if (niche) {
       const nicheList = niche.split(',').map((n) => n.trim().toLowerCase());
       filtered = filtered.filter((c) => {
-        const campaignNiche = (c.preferredNiche || '').toLowerCase();
+        const campaignNiche = ((c as any).preferredNiche || '').toLowerCase();
         if (!campaignNiche) return true; // no niche = open to all
         return nicheList.includes(campaignNiche);
       });
@@ -412,23 +408,24 @@ rand
       }
     }
 
-    const businessIds = Array.from(campaignMap.values())
-      .filter((c): c is NonNullable<typeof c> => !!c)
-      .map((c) => c.businessId);
+    const campaignsList = Array.from(campaignMap.values()).filter(
+      (c): c is NonNullable<typeof c> => !!c,
+    );
+    const businessIds = campaignsList.map((c) => c.businessId);
     const brandNames = await this.campaignsRepository.getBrandNames(businessIds);
+    const approvedCounts = await this.campaignsRepository.getApprovedCounts(
+      campaignsList.map((c) => c.campaignId),
+    );
 
     const results = [];
     for (const app of myApps) {
       const campaign = campaignMap.get(app.campaignId);
       if (!campaign) continue;
 
-      const allApps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
-      const approvedCount = allApps.filter((a) => a.status === 'Approved').length;
-
       results.push({
         ...campaign,
         brandName: brandNames[campaign.businessId] ?? 'Unknown Brand',
-        approvedCount,
+        approvedCount: approvedCounts[campaign.campaignId] ?? 0,
         applicationStatus: app.status,
         applicationId: app.applicationId,
         appliedAt: app.createdAt,

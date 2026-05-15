@@ -29,6 +29,20 @@
       "when": 1778300000000,
       "tag": "0003_sessions_token_lifetime",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778881341741,
+      "tag": "0004_add_brand_follows",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778881400000,
+      "tag": "0005_enable_rls_on_brand_follows",
+      "breakpoints": true
     }
   ]
 }

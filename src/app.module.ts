@@ -23,6 +23,7 @@ import { BrandsModule } from './modules/brands/brands.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { CreatorsModule } from './modules/creators/creators.module';
 import { AiModule } from './modules/ai/ai.module';
+import { FollowsModule } from './modules/follows/follows.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AiModule } from './modules/ai/ai.module';
     CampaignsModule,
     CreatorsModule,
     AiModule,
+    FollowsModule,
   ],
   providers: [
     // Global exception filter — consistent error response shape

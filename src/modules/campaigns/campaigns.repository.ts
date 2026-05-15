@@ -5,7 +5,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, and, inArray, or, desc, gt } from 'drizzle-orm';
+import { eq, and, inArray, or, desc, gt, sql } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { campaigns } from '../../database/schema/campaigns.schema';
 import { applications } from '../../database/schema/proposals.schema';
@@ -265,6 +265,35 @@ export class CampaignsRepository {
       .where(eq(applications.influencerId, influencerId))
       .orderBy(desc(applications.createdAt));
     return rows.map((r: any) => this.mapDbApplication(r));
+  }
+
+  /**
+   * Returns a map of campaignId → approved-application count for the
+   * given campaign IDs. Single grouped query — replaces the N+1 pattern
+   * of calling `listApplicationsByCampaign` per campaign in lists.
+   */
+  async getApprovedCounts(campaignIds: string[]): Promise<Record<string, number>> {
+    if (campaignIds.length === 0) return {};
+    const unique = Array.from(new Set(campaignIds));
+    const rows = await this.db
+      .select({
+        campaignId: applications.campaignId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(applications)
+      .where(
+        and(
+          inArray(applications.campaignId, unique),
+          eq(applications.status, 'Approved'),
+        ),
+      )
+      .groupBy(applications.campaignId);
+    const map: Record<string, number> = {};
+    for (const id of unique) map[id] = 0;
+    for (const row of rows) {
+      map[row.campaignId] = Number(row.count);
+    }
+    return map;
   }
 
   async updateApplication(applicationId: string, data: Partial<ApplicationRecord>): Promise<ApplicationRecord | null> {

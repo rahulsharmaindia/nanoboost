@@ -92,30 +92,32 @@ export class BrandsService {
     const userId = `brand_${dto.businessId}_${randomUUID()}`;
     const email = `${dto.businessId}@brand.local`;
 
-    // Persist user → brand profile → credentials in sequence.
-    // No transaction helper on the current Drizzle client setup — each
-    // failure leaves a recoverable state that the uniqueness check catches
-    // on retry.
-    await this.db.insert(users).values({
-      id: userId,
-      email,
-      role: 'brand',
-    });
+    // All three inserts must succeed atomically — otherwise a partial
+    // failure leaves the system with a brand profile but no credentials
+    // (or vice versa) and the next registration attempt fails the
+    // uniqueness check above.
+    await this.db.transaction(async (tx: any) => {
+      await tx.insert(users).values({
+        id: userId,
+        email,
+        role: 'brand',
+      });
 
-    await this.db.insert(brandProfiles).values({
-      userId,
-      businessId: dto.businessId,
-      name: dto.name,
-      logo: dto.logo || null,
-      industry: dto.industry,
-      website: dto.website || null,
-      description: dto.description || null,
-      socialLinks: dto.socialLinks ? JSON.stringify(dto.socialLinks) : null,
-    });
+      await tx.insert(brandProfiles).values({
+        userId,
+        businessId: dto.businessId,
+        name: dto.name,
+        logo: dto.logo || null,
+        industry: dto.industry,
+        website: dto.website || null,
+        description: dto.description || null,
+        socialLinks: dto.socialLinks ? JSON.stringify(dto.socialLinks) : null,
+      });
 
-    await this.db.insert(brandCredentials).values({
-      businessId: dto.businessId,
-      passwordHash: this.hashPassword(dto.password),
+      await tx.insert(brandCredentials).values({
+        businessId: dto.businessId,
+        passwordHash: this.hashPassword(dto.password),
+      });
     });
 
     const sessionId = await this.sessionService.create({
