@@ -114,7 +114,16 @@ export class CampaignsService {
 
   async listCampaigns(sessionId: string) {
     const businessId = await this.requireBrandSession(sessionId);
-    return this.campaignsRepository.listByBusiness(businessId);
+    const campaignList = await this.campaignsRepository.listByBusiness(businessId);
+
+    // Compute approvedCount for each campaign by counting approved applications.
+    const results = [];
+    for (const campaign of campaignList) {
+      const apps = await this.campaignsRepository.listApplicationsByCampaign(campaign.campaignId);
+      const approvedCount = apps.filter((a) => a.status === 'Approved').length;
+      results.push({ ...campaign, approvedCount });
+    }
+    return results;
   }
 
   async getCampaign(sessionId: string, campaignId: string) {
@@ -123,7 +132,9 @@ export class CampaignsService {
     if (!campaign || campaign.businessId !== businessId) {
       throw new CampaignNotFoundError();
     }
-    return campaign;
+    const apps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
+    const approvedCount = apps.filter((a) => a.status === 'Approved').length;
+    return { ...campaign, approvedCount };
   }
 
   async updateCampaign(sessionId: string, campaignId: string, data: Record<string, any>) {
