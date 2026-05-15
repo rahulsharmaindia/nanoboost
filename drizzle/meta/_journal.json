@@ -50,6 +50,13 @@
       "when": 1778881500000,
       "tag": "0006_session_web_redirect",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778881600000,
+      "tag": "0007_social_links_jsonb",
+      "breakpoints": true
     }
   ]
 }

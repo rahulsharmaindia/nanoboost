@@ -72,7 +72,9 @@ export class BrandsService {
       industry: brand.industry,
       website: brand.website,
       description: brand.description,
-      socialLinks: brand.socialLinks ? JSON.parse(brand.socialLinks) : null,
+      // jsonb column comes back as a typed object (or null) from
+      // the driver — no parsing needed.
+      socialLinks: brand.socialLinks ?? null,
       businessId: brand.businessId,
     };
   }
@@ -111,7 +113,7 @@ export class BrandsService {
         industry: dto.industry,
         website: dto.website || null,
         description: dto.description || null,
-        socialLinks: dto.socialLinks ? JSON.stringify(dto.socialLinks) : null,
+        socialLinks: dto.socialLinks ?? null,
       });
 
       await tx.insert(brandCredentials).values({
@@ -252,8 +254,7 @@ export class BrandsService {
           cleaned[k] = v.trim();
         }
       }
-      update.socialLinks =
-        Object.keys(cleaned).length > 0 ? JSON.stringify(cleaned) : null;
+      update.socialLinks = Object.keys(cleaned).length > 0 ? cleaned : null;
     }
 
     await this.db

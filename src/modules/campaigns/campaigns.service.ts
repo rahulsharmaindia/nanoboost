@@ -60,7 +60,10 @@ export class CampaignsService {
   }
 
   // ── Validation ─────────────────────────────────────────────
-
+  //
+  // Field-level shape and bounds checks live in CreateCampaignDto /
+  // UpdateCampaignDto via class-validator. This method covers the
+  // cross-field rules that don't fit on a single decorator.
   private validateCampaignData(data: Record<string, any>): void {
     for (const field of REQUIRED_CAMPAIGN_FIELDS) {
       if (data[field] === undefined || data[field] === null || data[field] === '') {
@@ -79,23 +82,13 @@ export class CampaignsService {
     if (subDeadline > end) throw new CampaignValidationError('Submission deadline must be on or before end date');
     if (contentDeadline > subDeadline) throw new CampaignValidationError('Content deadline must be on or before submission deadline');
 
-    if (Number(data.totalSlots) < 1) throw new CampaignValidationError('Total slots must be at least 1');
-    if (Number(data.minimumFollowers) <= 0) throw new CampaignValidationError('Minimum followers must be greater than 0');
-    if (Number(data.totalBudget) < 0) throw new CampaignValidationError('Total budget cannot be negative');
     if (Number(data.budgetPerCreator) > Number(data.totalBudget)) {
       throw new CampaignValidationError('Budget per creator cannot exceed total campaign budget');
     }
 
     const ageMin = Number(data.ageGroupMin);
     const ageMax = Number(data.ageGroupMax);
-    if (ageMin < 13 || ageMin > 65) throw new CampaignValidationError('Age must be between 13 and 65');
-    if (ageMax < 13 || ageMax > 65) throw new CampaignValidationError('Age must be between 13 and 65');
     if (ageMin >= ageMax) throw new CampaignValidationError('Minimum age must be less than maximum age');
-
-    const engagementRate = Number(data.requiredEngagementRate);
-    if (engagementRate < 0 || engagementRate > 100) {
-      throw new CampaignValidationError('Engagement rate must be between 0 and 100');
-    }
 
     if (data.reserveSlots !== undefined && data.reserveSlots !== null) {
       if (Number(data.reserveSlots) > Number(data.totalSlots)) {

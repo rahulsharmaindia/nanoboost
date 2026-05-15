@@ -16,6 +16,8 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { CampaignsService } from './campaigns.service';
+import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { BrandAuthGuard } from '../../common/guards/brand-auth.guard';
 import { AuthGuard } from '../../common/guards/auth.guard';
 
@@ -27,7 +29,7 @@ export class CampaignsController {
 
   @UseGuards(BrandAuthGuard)
   @Post('api/campaigns')
-  createCampaign(@Req() req: Request, @Body() body: Record<string, any>) {
+  createCampaign(@Req() req: Request, @Body() body: CreateCampaignDto) {
     return this.campaignsService.createCampaign((req as any).sessionId, body);
   }
 
@@ -48,7 +50,7 @@ export class CampaignsController {
   updateCampaign(
     @Req() req: Request,
     @Param('campaignId') campaignId: string,
-    @Body() body: Record<string, any>,
+    @Body() body: UpdateCampaignDto,
   ) {
     return this.campaignsService.updateCampaign((req as any).sessionId, campaignId, body);
   }

@@ -1,6 +1,6 @@
 // ── Brand profiles schema ────────────────────────────────────
 
-import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'crypto';
 import { users } from './users.schema';
 
@@ -13,7 +13,9 @@ export const brandProfiles = pgTable('brand_profiles', {
   industry: text('industry').notNull(),
   website: text('website'),
   description: text('description'),
-  socialLinks: text('social_links'), // JSON string
+  // Object of platform → URL. Stored as jsonb so future code can
+  // index / query individual links without parsing a string blob.
+  socialLinks: jsonb('social_links').$type<Record<string, string> | null>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
