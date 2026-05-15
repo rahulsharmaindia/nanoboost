@@ -43,6 +43,13 @@
       "when": 1778881400000,
       "tag": "0005_enable_rls_on_brand_follows",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778881500000,
+      "tag": "0006_session_web_redirect",
+      "breakpoints": true
     }
   ]
 }

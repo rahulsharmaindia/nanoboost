@@ -40,6 +40,10 @@ export const sessions = pgTable(
     lastRefreshedAt: timestamp('last_refreshed_at'),         // last successful IG refresh
     // Brand fields
     businessId: text('business_id'),
+    // Web OAuth — origin to redirect the PWA back to after Instagram
+    // returns. Lives on the session row instead of an in-memory Map so
+    // the callback works across server restarts and multiple replicas.
+    webRedirectUri: text('web_redirect_uri'),
     // Common
     status: sessionStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

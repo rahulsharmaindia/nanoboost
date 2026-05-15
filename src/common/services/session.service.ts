@@ -35,6 +35,7 @@ export interface SessionRecord {
   expiresAt: Date;
   tokenExpiresAt: Date | null;
   lastRefreshedAt: Date | null;
+  webRedirectUri: string | null;
 }
 
 export interface CreateSessionInput {
@@ -43,6 +44,7 @@ export interface CreateSessionInput {
   businessId?: string | null;
   status?: 'pending' | 'authenticated' | 'error';
   tokenExpiresAt?: Date | null;
+  webRedirectUri?: string | null;
 }
 
 export interface UpdateSessionInput {
@@ -52,6 +54,7 @@ export interface UpdateSessionInput {
   status?: 'pending' | 'authenticated' | 'error';
   tokenExpiresAt?: Date | null;
   lastRefreshedAt?: Date | null;
+  webRedirectUri?: string | null;
   // When true, rolls the session-level TTL forward by sessionTtlMs.
   // Use after a successful token refresh so active users don't get
   // kicked out once the original expiresAt lapses.
@@ -90,6 +93,7 @@ export class SessionService {
       expiresAt: this.toDate(row.expiresAt) ?? new Date(),
       tokenExpiresAt: this.toDate(row.tokenExpiresAt),
       lastRefreshedAt: this.toDate(row.lastRefreshedAt),
+      webRedirectUri: row.webRedirectUri ?? null,
     };
   }
 
@@ -104,6 +108,7 @@ export class SessionService {
         businessId: input.businessId ?? null,
         status: input.status ?? 'pending',
         tokenExpiresAt: input.tokenExpiresAt ?? null,
+        webRedirectUri: input.webRedirectUri ?? null,
         expiresAt,
       })
       .returning({ sessionId: sessions.sessionId });
@@ -135,6 +140,7 @@ export class SessionService {
     if (patch.status !== undefined) updateData.status = patch.status;
     if (patch.tokenExpiresAt !== undefined) updateData.tokenExpiresAt = patch.tokenExpiresAt;
     if (patch.lastRefreshedAt !== undefined) updateData.lastRefreshedAt = patch.lastRefreshedAt;
+    if (patch.webRedirectUri !== undefined) updateData.webRedirectUri = patch.webRedirectUri;
     if (patch.rollExpiresAt) {
       updateData.expiresAt = new Date(Date.now() + env.sessionTtlMs);
     }

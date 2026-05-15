@@ -5,27 +5,28 @@
 import { Controller, Get, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { SessionService } from '../../common/services/session.service';
 import { Public } from '../../common/decorators/public.decorator';
 
 @Controller()
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly sessionService: SessionService,
+  ) {}
 
-  /// In-memory map of sessionId → web redirect URI.
-  /// Populated when a web client starts OAuth, consumed in the callback.
-  /// This avoids a DB schema change — the entry lives only for the
-  /// duration of the OAuth flow (seconds to minutes).
-  private webRedirects = new Map<string, string>();
-
-  private buildRedirectUrl(sessionId: string, params: string): string {
-    const webUri = this.webRedirects.get(sessionId);
+  /// Build the post-callback redirect URL.
+  ///
+  /// Web clients pass `web_redirect_uri` to /api/auth/start; we persist
+  /// it on the session row (see sessions.web_redirect_uri column) so
+  /// the callback works regardless of which Railway replica handles
+  /// the request and whether the server has been restarted in between.
+  /// Mobile clients fall through to the custom `iginsights://` scheme.
+  private buildRedirectUrl(webUri: string | null, params: string): string {
     if (webUri) {
-      this.webRedirects.delete(sessionId);
-      // Redirect back to the PWA with query params
       const separator = webUri.includes('?') ? '&' : '?';
       return `${webUri}${separator}${params}`;
     }
-    // Mobile: use custom scheme
     return `iginsights://auth?${params}`;
   }
 
@@ -37,10 +38,12 @@ export class AuthController {
     @Query('web_redirect_uri') webRedirectUri?: string,
   ) {
     const { sessionId, authUrl } = await this.authService.startOAuth();
-    // Store the web redirect URI so the callback knows where to send
-    // the user back to after OAuth completes.
     if (platform === 'web' && webRedirectUri) {
-      this.webRedirects.set(sessionId, webRedirectUri);
+      // Persist on the session row so the callback (potentially on a
+      // different replica or after a restart) can rebuild the URL.
+      await this.sessionService.update(sessionId, {
+        webRedirectUri,
+      });
     }
     return { session_id: sessionId, auth_url: authUrl };
   }
@@ -55,22 +58,33 @@ export class AuthController {
     @Query('error_description') errorDescription: string,
     @Res() res: Response,
   ) {
+    const session = state ? await this.sessionService.get(state) : null;
+    const webUri = session?.webRedirectUri ?? null;
+
     if (error) {
       return res.redirect(
-        this.buildRedirectUrl(state || '', `status=error&session_id=${state}&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`),
+        this.buildRedirectUrl(
+          webUri,
+          `status=error&session_id=${state}&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`,
+        ),
       );
     }
 
     if (!state) {
       return res.redirect(
-        this.buildRedirectUrl('', `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`),
+        this.buildRedirectUrl(
+          null,
+          `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
+        ),
       );
     }
 
-    const existing = await this.authService.getStatus(state);
-    if (existing.status === 'not_found') {
+    if (!session) {
       return res.redirect(
-        this.buildRedirectUrl(state, `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`),
+        this.buildRedirectUrl(
+          null,
+          `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
+        ),
       );
     }
 
@@ -79,12 +93,18 @@ export class AuthController {
 
     if (result.status === 'error') {
       return res.redirect(
-        this.buildRedirectUrl(state, `status=error&session_id=${state}&reason=${encodeURIComponent('Authentication failed')}`),
+        this.buildRedirectUrl(
+          webUri,
+          `status=error&session_id=${state}&reason=${encodeURIComponent('Authentication failed')}`,
+        ),
       );
     }
 
     return res.redirect(
-      this.buildRedirectUrl(state, `status=authenticated&session_id=${state}`),
+      this.buildRedirectUrl(
+        webUri,
+        `status=authenticated&session_id=${state}`,
+      ),
     );
   }
 
