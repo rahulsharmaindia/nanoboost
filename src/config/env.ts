@@ -34,6 +34,16 @@ export const env = {
   instagramScopes: 'instagram_business_basic,instagram_business_manage_insights',
   instagramApiVersion: 'v25.0',
 
+  // OAuth callback fallback for web/desktop browsers.
+  //
+  // When a session row has no `web_redirect_uri` (e.g. the start
+  // request didn't carry it, or the migration hasn't been applied
+  // on this DB), the auth callback would otherwise fall back to
+  // the mobile-only `iginsights://` scheme — which renders as a
+  // blank tab in desktop Chrome. Setting this var (e.g. the PWA
+  // origin) keeps desktop browsers landing back on the app.
+  webFallbackUri: getEnvOptional('WEB_FALLBACK_URI'),
+
   // Gemini AI
   geminiApiKey: getEnvOptional('GEMINI_API_KEY'),
   geminiModel: getEnvOptional('GEMINI_MODEL', 'gemini-2.0-flash'),

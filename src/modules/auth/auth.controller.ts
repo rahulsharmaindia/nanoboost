@@ -2,14 +2,17 @@
 // Handles OAuth start, callback redirect, status polling, and logout.
 // All routes are public — auth happens inside the OAuth flow itself.
 
-import { Controller, Get, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { SessionService } from '../../common/services/session.service';
 import { Public } from '../../common/decorators/public.decorator';
+import { env } from '../../config/env';
 
 @Controller()
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly sessionService: SessionService,
@@ -17,16 +20,26 @@ export class AuthController {
 
   /// Build the post-callback redirect URL.
   ///
-  /// Web clients pass `web_redirect_uri` to /api/auth/start; we persist
-  /// it on the session row (see sessions.web_redirect_uri column) so
-  /// the callback works regardless of which Railway replica handles
-  /// the request and whether the server has been restarted in between.
-  /// Mobile clients fall through to the custom `iginsights://` scheme.
+  /// Resolution order:
+  ///   1. Session-scoped `web_redirect_uri` (set by the PWA when it
+  ///      called `/api/auth/start` with `platform=web`).
+  ///   2. `WEB_FALLBACK_URI` env var — covers desktop browsers that
+  ///      somehow lost their session-scoped URI (missing migration,
+  ///      stale client bundle, etc.) so they don't end up on a
+  ///      `iginsights://` URL the browser can't dispatch.
+  ///   3. The mobile custom scheme `iginsights://auth?…` — last
+  ///      resort, only useful for native iOS/Android clients.
   private buildRedirectUrl(webUri: string | null, params: string): string {
-    if (webUri) {
-      const separator = webUri.includes('?') ? '&' : '?';
-      return `${webUri}${separator}${params}`;
+    const target = webUri ?? env.webFallbackUri ?? null;
+    if (target) {
+      const separator = target.includes('?') ? '&' : '?';
+      return `${target}${separator}${params}`;
     }
+    this.logger.warn(
+      'OAuth callback falling back to iginsights:// — desktop ' +
+        'browsers will see a blank page. Set WEB_FALLBACK_URI to ' +
+        'the PWA origin to fix.',
+    );
     return `iginsights://auth?${params}`;
   }
 
