@@ -251,6 +251,22 @@ export class CampaignsService {
 
     const subs = await this.campaignsRepository.listSubmissionsByCampaign(campaignId);
 
+    // Backfill missing influencerUsername from the corresponding
+    // approved application. Older submission rows were inserted
+    // before the service started persisting the handle, so this
+    // keeps brand dashboards from showing "@unknown" for them.
+    const missingUsername = subs.filter((s) => !s.influencerUsername);
+    if (missingUsername.length > 0) {
+      const apps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
+      const handleByInfluencer = new Map(
+        apps.filter((a) => a.username).map((a) => [a.influencerId, a.username]),
+      );
+      for (const sub of missingUsername) {
+        const handle = handleByInfluencer.get(sub.influencerId);
+        if (handle) sub.influencerUsername = handle;
+      }
+    }
+
     // Auto-approve logic
     if (campaign.requireApproval && campaign.autoApproveAfterHours) {
       const now = new Date();
@@ -385,7 +401,14 @@ export class CampaignsService {
       throw new SubmissionForbiddenError();
     }
 
-    return this.campaignsRepository.createSubmission(campaignId, providerUserId, data);
+    // Carry the creator's handle from their (approved) application
+    // record onto the submission so brand-side dashboards can show
+    // "@handle" without an extra lookup. Avoids the @unknown
+    // placeholder that surfaced when this was left null.
+    return this.campaignsRepository.createSubmission(campaignId, providerUserId, {
+      ...data,
+      influencerUsername: application.username,
+    });
   }
 
   async getMyCampaigns(sessionId: string) {
