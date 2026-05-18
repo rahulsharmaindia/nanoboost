@@ -1,0 +1,71 @@
+{{! Subject: Your NanoCeleb receipt — {{tierName}} plan }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Receipt — NanoCeleb</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1a1a1a; }
+    .wrapper { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #6C47FF; padding: 32px 40px; text-align: center; }
+    .header img { height: 32px; }
+    .header h1 { margin: 16px 0 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    .body { padding: 40px; }
+    .greeting { font-size: 16px; color: #333333; margin-bottom: 24px; }
+    .receipt-box { background: #f9f7ff; border: 1px solid #e0d9ff; border-radius: 10px; padding: 24px; margin-bottom: 32px; }
+    .receipt-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #ede9ff; font-size: 15px; }
+    .receipt-row:last-child { border-bottom: none; font-weight: 700; font-size: 16px; color: #6C47FF; }
+    .receipt-label { color: #666666; }
+    .receipt-value { color: #1a1a1a; font-weight: 500; }
+    .message { font-size: 15px; color: #555555; line-height: 1.6; margin-bottom: 32px; }
+    .footer { background: #f5f5f5; padding: 24px 40px; text-align: center; font-size: 13px; color: #999999; }
+    .footer a { color: #6C47FF; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <h1>NanoCeleb</h1>
+    </div>
+
+    <div class="body">
+      <p class="greeting">Hi {{userName}},</p>
+
+      <p class="message">
+        Thanks for your payment — your <strong>{{tierName}}</strong> plan is active and ready to go.
+        Here's your receipt for your records.
+      </p>
+
+      <div class="receipt-box">
+        <div class="receipt-row">
+          <span class="receipt-label">Plan</span>
+          <span class="receipt-value">{{tierName}}</span>
+        </div>
+        <div class="receipt-row">
+          <span class="receipt-label">Billing period</span>
+          <span class="receipt-value">{{periodStart}} – {{periodEnd}}</span>
+        </div>
+        <div class="receipt-row">
+          <span class="receipt-label">Currency</span>
+          <span class="receipt-value">{{currency}}</span>
+        </div>
+        <div class="receipt-row">
+          <span class="receipt-label">Amount charged</span>
+          <span class="receipt-value">{{amount}}</span>
+        </div>
+      </div>
+
+      <p class="message">
+        If you have any questions about this charge, reply to this email or visit your
+        <a href="https://nanoceleb.com/app/manage-subscription" style="color:#6C47FF;">subscription settings</a>.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>© NanoCeleb · <a href="https://nanoceleb.com">nanoceleb.com</a></p>
+      <p>You're receiving this because you have an active NanoCeleb subscription.</p>
+    </div>
+  </div>
+</body>
+</html>

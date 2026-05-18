@@ -1,6 +1,6 @@
 // ── AI controller ────────────────────────────────────────────
 
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { GenerateContentDto } from './ai.types';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -12,7 +12,8 @@ export class AiController {
 
   // POST /api/ai/generate
   @Post('generate')
-  generate(@Body() dto: GenerateContentDto) {
-    return this.aiService.generate(dto);
+  generate(@Body() dto: GenerateContentDto, @Req() req: any) {
+    const userId: string = req.user?.userId;
+    return this.aiService.generate(dto, userId);
   }
 }

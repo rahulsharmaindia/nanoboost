@@ -8,10 +8,11 @@ import { SessionService } from './services/session.service';
 import { TokenCipher } from './services/token-cipher.service';
 import { AuthGuard } from './guards/auth.guard';
 import { BrandAuthGuard } from './guards/brand-auth.guard';
+import { FeatureFlagsService } from './config/feature-flags.service';
 
 @Global()
 @Module({
-  providers: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
-  exports: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
+  providers: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard, FeatureFlagsService],
+  exports: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard, FeatureFlagsService],
 })
 export class CommonModule {}

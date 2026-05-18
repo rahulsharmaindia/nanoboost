@@ -10,6 +10,8 @@ import { getCorsOptions } from './config/cors';
 import { env } from './config/env';
 import { getDrizzleClient } from './database/database.client';
 import { probeDatabase } from './database/database.probe';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { SubscriptionsErrorFilter } from './common/filters/subscriptions-error.filter';
 
 async function bootstrap() {
   if (!env.databaseUrl) {
@@ -61,6 +63,10 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Global exception filters — order matters: more-specific filters run first.
+  // SubscriptionsErrorFilter handles domain errors before the catch-all HttpExceptionFilter.
+  app.useGlobalFilters(new HttpExceptionFilter(), new SubscriptionsErrorFilter());
 
   const port = env.port;
   await app.listen(port, '0.0.0.0');

@@ -6,6 +6,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SessionService } from '../../common/services/session.service';
 import { MetaService } from '../meta/meta.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { env } from '../../config/env';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly sessionService: SessionService,
     private readonly metaService: MetaService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async startOAuth(): Promise<{ sessionId: string; authUrl: string }> {
@@ -77,6 +79,12 @@ export class AuthService {
         // Roll forward so the clock starts from successful login.
         rollExpiresAt: true,
       });
+
+      // Provision a creator-tier subscription for this user (Req 17.5, 17.6).
+      // createForNewUser is idempotent — returning users get their existing
+      // subscription back. If provisioning fails for a new user, the error
+      // propagates and signup is reported as failed (Req 17.6).
+      await this.subscriptionsService.createForNewUser(String(userId));
 
       this.logger.log(`Authenticated user ${userId}`);
       return { status: 'authenticated', sessionId: state };

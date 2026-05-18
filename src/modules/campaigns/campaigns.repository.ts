@@ -149,6 +149,7 @@ export class CampaignsRepository {
       'preferredNiche', 'contentStyleExpectations', 'audienceGenderRatio',
       'totalSlots', 'reserveSlots', 'guidelinesDos', 'guidelinesDonts',
       'brandMessaging', 'approvalProcessDescription', 'autoApproveAfterHours',
+      'publishedAt',
     ];
     for (const field of scalarFields) {
       if (data[field] !== undefined) updateData[field] = data[field];
@@ -404,6 +405,9 @@ export class CampaignsRepository {
       requireApproval: row.requireApproval,
       autoApproveAfterHours: row.autoApproveAfterHours,
       status: row.status,
+      publishedAt: row.publishedAt instanceof Date
+        ? row.publishedAt.toISOString()
+        : (row.publishedAt ?? null),
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
       updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
     };

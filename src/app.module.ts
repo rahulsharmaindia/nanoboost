@@ -24,6 +24,9 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { CreatorsModule } from './modules/creators/creators.module';
 import { AiModule } from './modules/ai/ai.module';
 import { FollowsModule } from './modules/follows/follows.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { PayoutsModule } from './modules/payouts/payouts.module';
+import { ProposalsModule } from './modules/proposals/proposals.module';
 
 @Module({
   imports: [
@@ -39,6 +42,9 @@ import { FollowsModule } from './modules/follows/follows.module';
     CreatorsModule,
     AiModule,
     FollowsModule,
+    SubscriptionsModule,
+    PayoutsModule,
+    ProposalsModule,
   ],
   providers: [
     // Global exception filter — consistent error response shape

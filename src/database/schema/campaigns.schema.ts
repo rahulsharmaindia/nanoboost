@@ -78,6 +78,10 @@ export const campaigns = pgTable('campaigns', {
 
   // Metadata
   status: campaignStatusEnum('status').notNull().default('Draft'),
+  // Set when a campaign transitions to 'Published' status.
+  // Used by the studio early-access window (Req 2.8): campaigns published
+  // within the last 24h are hidden from non-studio tiers.
+  publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
