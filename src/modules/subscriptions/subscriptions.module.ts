@@ -7,6 +7,7 @@
 
 import { Module } from '@nestjs/common';
 import { SubscriptionsController } from './subscriptions.controller';
+import { PlansController } from './plans.controller';
 import { InternalCapController } from './internal-cap.controller';
 import { AddOnsController } from './add-ons.controller';
 import { PaymentsWebhookController } from './payments-webhook.controller';
@@ -51,7 +52,7 @@ function resolvePaymentAdapter() {
 
 @Module({
   imports: [NotificationsModule],
-  controllers: [SubscriptionsController, InternalCapController, AddOnsController, PaymentsWebhookController],
+  controllers: [SubscriptionsController, PlansController, InternalCapController, AddOnsController, PaymentsWebhookController],
   providers: [
     SubscriptionsService,
     SubscriptionsRepository,
