@@ -22,6 +22,7 @@ import { PromotionService } from './promotion.service';
 import { AddOnsService } from './add-ons.service';
 import { PaymentPort } from './ports/payment.port';
 import { MockPaymentAdapter } from './adapters/mock-payment.adapter';
+import { RazorpayPaymentAdapter } from './adapters/razorpay-payment.adapter';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PeriodAdvanceScheduler } from './schedulers/period-advance.scheduler';
 import { AddonRenewalScheduler } from './schedulers/addon-renewal.scheduler';
@@ -32,17 +33,20 @@ import { BoostExpirationSweeper } from './schedulers/boost-expiration.sweeper';
  * Resolve the concrete PaymentPort adapter from the PAYMENT_ADAPTER env var.
  *
  * Supported values:
- *   'mock'      → MockPaymentAdapter  (default for tests / local dev)
- *   'stripe'    → StripePaymentAdapter  (not yet implemented)
- *   'razorpay'  → RazorpayPaymentAdapter  (not yet implemented)
+ *   'razorpay'  → RazorpayPaymentAdapter  (real Razorpay test/live keys)
+ *   'mock'      → MockPaymentAdapter      (default for tests / local dev)
+ *   'stripe'    → StripePaymentAdapter    (not yet implemented)
  *
- * Concrete Razorpay/Stripe adapters will be added in a later task.
- * Until then, any unrecognised value falls back to MockPaymentAdapter so
- * the module always boots without crashing.
+ * Swapping providers requires only a new adapter class — no changes to
+ * SubscriptionsService or AddOnsService. Razorpay flows route through the
+ * `/upgrade/order|verify` and `/add-ons/me/purchase/order|verify` endpoints
+ * exposed by the controllers.
  */
 function resolvePaymentAdapter() {
   const adapter = process.env.PAYMENT_ADAPTER;
-  // Future: add 'stripe' and 'razorpay' cases here when adapters are implemented.
+  if (adapter === 'razorpay') {
+    return RazorpayPaymentAdapter;
+  }
   if (adapter === 'mock' || !adapter) {
     return MockPaymentAdapter;
   }

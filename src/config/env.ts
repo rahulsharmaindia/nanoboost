@@ -72,4 +72,16 @@ export const env = {
   // In production this MUST be set. In development the app logs a
   // warning and falls back to plaintext so local dev still works.
   tokenEncryptionKey: getEnvOptional('TOKEN_ENCRYPTION_KEY'),
+
+  // ── Razorpay ───────────────────────────────────────────────
+  // Test mode: keys begin with `rzp_test_`. Live mode: `rzp_live_`.
+  // The webhook secret is set in the Razorpay dashboard when you
+  // configure the webhook endpoint and is used to verify HMAC SHA256
+  // signatures on incoming webhook payloads.
+  //
+  // Required when PAYMENT_ADAPTER=razorpay. The RazorpayPaymentAdapter
+  // will throw at construction time if either key is missing.
+  razorpayKeyId: getEnvOptional('RAZORPAY_KEY_ID'),
+  razorpayKeySecret: getEnvOptional('RAZORPAY_KEY_SECRET'),
+  razorpayWebhookSecret: getEnvOptional('RAZORPAY_WEBHOOK_SECRET'),
 };

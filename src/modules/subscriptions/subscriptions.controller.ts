@@ -1,7 +1,15 @@
 // ── Subscriptions controller ─────────────────────────────────
 // HTTP route handlers for /v1/subscriptions and related endpoints.
 
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { SubscriptionsService } from './subscriptions.service';
@@ -11,6 +19,8 @@ import { CapEnforcerService } from './cap-enforcer.service';
 import { capForFeature, type Feature, type Tier } from './subscriptions.types';
 import { UpgradeDto } from './dto/upgrade.dto';
 import { DowngradeDto } from './dto/downgrade.dto';
+import { PaymentPort } from './ports/payment.port';
+import { RazorpayPaymentAdapter } from './adapters/razorpay-payment.adapter';
 
 @Controller('v1/subscriptions')
 export class SubscriptionsController {
@@ -19,6 +29,7 @@ export class SubscriptionsController {
     private readonly subscriptionsRepository: SubscriptionsRepository,
     private readonly plansCatalog: PlansCatalogService,
     private readonly capEnforcer: CapEnforcerService,
+    private readonly paymentPort: PaymentPort,
   ) {}
 
   /**
@@ -110,6 +121,102 @@ export class SubscriptionsController {
   }
 
   /**
+   * POST /v1/subscriptions/me/upgrade/order
+   *
+   * Step 1 of the interactive Razorpay upgrade flow. Computes the charge
+   * amount for the requested upgrade and returns a Razorpay order id +
+   * the public key id, which the client uses to open Razorpay Checkout.
+   *
+   * Does NOT mutate the subscription. The actual upgrade only happens in
+   * the matching `/upgrade/verify` call after the user has paid.
+   *
+   * Requires PAYMENT_ADAPTER=razorpay; falls back to a clear 400 otherwise
+   * so it's obvious during local dev when the env isn't set up.
+   *
+   * Requirements: 6.1, 6.2, 6.3, 6.7, 22.5
+   */
+  @Post('me/upgrade/order')
+  @UseGuards(AuthGuard)
+  async createUpgradeOrder(
+    @Req() req: Request,
+    @Body() dto: UpgradeDto,
+  ): Promise<any> {
+    const userId = (req as any).providerUserId as string;
+    const intent = await this.subscriptionsService.prepareUpgrade(
+      userId,
+      dto.targetTier,
+    );
+    const adapter = this.requireRazorpay();
+    const order = await adapter.createOrder({
+      userId,
+      amountMinor: intent.amountMinor,
+      currency: intent.currency,
+      idempotencyKey: intent.idempotencyKey,
+      description: intent.description,
+    });
+    return { ...order };
+  }
+
+  /**
+   * POST /v1/subscriptions/me/upgrade/verify
+   *
+   * Step 2 of the interactive Razorpay upgrade flow. Verifies the payload
+   * returned by Razorpay Checkout's `handler` callback (HMAC SHA256 of
+   * `orderId|paymentId` keyed by RAZORPAY_KEY_SECRET), then runs the
+   * transactional upgrade and returns the updated subscription.
+   *
+   * Body shape:
+   * ```json
+   * {
+   *   "targetTier": "growth" | "studio",
+   *   "razorpayOrderId":  "order_NXa83hG...",
+   *   "razorpayPaymentId": "pay_NXa83hH...",
+   *   "razorpaySignature": "<hex>"
+   * }
+   * ```
+   *
+   * On signature mismatch returns 400 VALIDATION_ERROR. On any business
+   * validation failure (subscription missing, payment_owed, etc.) the
+   * existing typed subscription errors propagate.
+   *
+   * Requirements: 6.1, 6.5
+   */
+  @Post('me/upgrade/verify')
+  @UseGuards(AuthGuard)
+  async verifyUpgrade(@Req() req: Request, @Body() body: any): Promise<any> {
+    const userId = (req as any).providerUserId as string;
+    const targetTier = body?.targetTier;
+    const razorpayOrderId = body?.razorpayOrderId;
+    const razorpayPaymentId = body?.razorpayPaymentId;
+    const razorpaySignature = body?.razorpaySignature;
+
+    if (
+      (targetTier !== 'growth' && targetTier !== 'studio') ||
+      typeof razorpayOrderId !== 'string' ||
+      typeof razorpayPaymentId !== 'string' ||
+      typeof razorpaySignature !== 'string'
+    ) {
+      throw new BadRequestException(
+        'Required: targetTier (growth|studio), razorpayOrderId, razorpayPaymentId, razorpaySignature.',
+      );
+    }
+
+    const adapter = this.requireRazorpay();
+    const { providerRef } = adapter.verifyPayment({
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    });
+
+    const subscription = await this.subscriptionsService.finalizeUpgrade(
+      userId,
+      targetTier,
+      providerRef,
+    );
+    return { subscription };
+  }
+
+  /**
    * Upgrade the authenticated user's subscription to a higher tier.
    *
    * Charges the prorated (paid→paid) or full (free→paid) amount immediately,
@@ -176,5 +283,23 @@ export class SubscriptionsController {
     await this.subscriptionsService.resume(userId);
     const subscription = await this.subscriptionsRepository.getActiveSubscription(userId);
     return { subscription };
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  /**
+   * Narrows the injected PaymentPort to a RazorpayPaymentAdapter.
+   * Throws a 400 with a clear message if the active adapter is not
+   * Razorpay (e.g. PAYMENT_ADAPTER=mock during local dev), so we don't
+   * silently render a broken Checkout flow.
+   */
+  private requireRazorpay(): RazorpayPaymentAdapter {
+    if (!(this.paymentPort instanceof RazorpayPaymentAdapter)) {
+      throw new BadRequestException(
+        'razorpay_unavailable — set PAYMENT_ADAPTER=razorpay and provide ' +
+          'RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET to use the upgrade flow.',
+      );
+    }
+    return this.paymentPort;
   }
 }

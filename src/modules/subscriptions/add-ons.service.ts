@@ -20,6 +20,7 @@ import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { addOnPurchases } from '../../database/schema/add_on_purchases.schema';
 import type { AddOnPurchase } from '../../database/schema/add_on_purchases.schema';
 import { subscriptions } from '../../database/schema/subscriptions.schema';
+import { payments } from '../../database/schema/payments.schema';
 import { PaymentPort } from './ports/payment.port';
 import { SubscriptionsRepository } from './subscriptions.repository';
 import { SubscriptionEventsRepository } from './subscription-events.repository';
@@ -39,6 +40,42 @@ const BOOST_DURATION_DAYS = 7;
 
 /** Period length in days for recurring add-ons (Req 14.1) */
 const RECURRING_PERIOD_DAYS = 30;
+
+/**
+ * Add-on price catalog in minor currency units.
+ *
+ * Mirrors the canonical values from design.md §Add-ons. Kept inline because
+ * add-ons aren't (yet) stored in the `plans` table — they have their own
+ * lifecycle and pricing model. When more locales / currencies are added,
+ * promote this to a Drizzle table seeded the same way as `plans`.
+ */
+const ADDON_PRICES: Record<
+  'boost' | 'ai_growth_pack' | 'content_studio_pack',
+  Record<'IN' | 'US', { amountMinor: number; currency: 'INR' | 'USD' }>
+> = {
+  boost: {
+    IN: { amountMinor: 19900, currency: 'INR' }, // ₹199 / 7-day window
+    US: { amountMinor: 299, currency: 'USD' }, //  $2.99
+  },
+  ai_growth_pack: {
+    IN: { amountMinor: 29900, currency: 'INR' }, // ₹299/mo
+    US: { amountMinor: 399, currency: 'USD' }, //  $3.99/mo
+  },
+  content_studio_pack: {
+    IN: { amountMinor: 49900, currency: 'INR' }, // ₹499/mo
+    US: { amountMinor: 599, currency: 'USD' }, //  $5.99/mo
+  },
+};
+
+/** Display labels for receipts / order descriptions. */
+const ADDON_LABELS: Record<
+  'boost' | 'ai_growth_pack' | 'content_studio_pack',
+  string
+> = {
+  boost: 'Boost',
+  ai_growth_pack: 'AI Growth Pack',
+  content_studio_pack: 'Content Studio Pack',
+};
 
 // ── Service ───────────────────────────────────────────────────────────────
 
@@ -147,6 +184,148 @@ export class AddOnsService {
         .returning();
 
       // 4. Append audit event (Req 24.2)
+      await this.subscriptionEventsRepository.append(tx, {
+        userId,
+        subscriptionId: sub?.id,
+        eventType: 'addon_purchased',
+        actorType: 'user',
+        afterSnapshot: created as Record<string, unknown>,
+      });
+
+      return created as AddOnPurchase;
+    });
+  }
+
+  /**
+   * Prepares an add-on purchase by computing the charge amount and
+   * returning the data the client needs to open Razorpay Checkout. Does
+   * not mutate state; the actual purchase row is written by
+   * {@link finalizePurchase} after the client returns the verified
+   * payment id.
+   *
+   * Requirements: 12.1, 12.3, 12.4, 12.5
+   */
+  async preparePurchase(
+    userId: string,
+    addonId: 'boost' | 'ai_growth_pack' | 'content_studio_pack',
+  ): Promise<{
+    amountMinor: number;
+    currency: 'INR' | 'USD';
+    idempotencyKey: string;
+    description: string;
+  }> {
+    const sub = await this.db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, userId),
+    });
+    if (sub?.paymentOwed) {
+      throw new PaymentOwedError(userId);
+    }
+
+    const locale: 'IN' | 'US' = sub?.locale ?? 'IN';
+    const price = ADDON_PRICES[addonId][locale];
+    // Stable per (user, addon, day) — re-tries on the same day reuse the
+    // same Razorpay order via `receipt`. We deliberately bucket by day so
+    // that a user who closes Checkout and re-opens it within the same day
+    // does not generate orphan orders, but a different day's purchase is
+    // a fresh intent.
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const idempotencyKey = `addon_purchase:${userId}:${addonId}:${dayKey}`;
+
+    return {
+      amountMinor: price.amountMinor,
+      currency: price.currency,
+      idempotencyKey,
+      description: `Add-on purchase: ${ADDON_LABELS[addonId]}`,
+    };
+  }
+
+  /**
+   * Finalizes an add-on purchase after the client has paid via Razorpay.
+   * The caller (controller) is expected to have verified the payment
+   * signature already; this method only persists the purchase row + a
+   * matching `payments` ledger entry under one transaction.
+   *
+   * Requirements: 12.1, 12.3, 12.4, 12.5, 13.1, 14.1
+   */
+  async finalizePurchase(
+    userId: string,
+    addonId: 'boost' | 'ai_growth_pack' | 'content_studio_pack',
+    providerRef: string,
+  ): Promise<AddOnPurchase> {
+    return this.db.transaction(async (tx: any) => {
+      const sub = await tx.query.subscriptions.findFirst({
+        where: eq(subscriptions.userId, userId),
+      });
+      if (sub?.paymentOwed) {
+        throw new PaymentOwedError(userId);
+      }
+
+      const locale: 'IN' | 'US' = sub?.locale ?? 'IN';
+      const price = ADDON_PRICES[addonId][locale];
+      const now = new Date();
+      const dayKey = now.toISOString().slice(0, 10);
+      const idempotencyKey = `addon_purchase:${userId}:${addonId}:${dayKey}`;
+
+      // Record payment first so reversal lookup by providerRef works even
+      // if the purchase row insert later fails.
+      await tx
+        .insert(payments)
+        .values({
+          userId,
+          amountMinorUnits: price.amountMinor,
+          currency: price.currency,
+          providerRef,
+          status: 'succeeded' as const,
+          idempotencyKey,
+          chargedAt: now,
+        })
+        .onConflictDoNothing();
+
+      const lifecycle = ADDON_LIFECYCLE[addonId];
+      let insertValues: any;
+
+      if (lifecycle === 'one_time') {
+        const effectiveEnd = new Date(
+          now.getTime() + BOOST_DURATION_DAYS * 24 * 60 * 60 * 1000,
+        );
+        insertValues = {
+          userId,
+          addonId,
+          lifecycle: 'one_time' as const,
+          status: 'active' as const,
+          effectiveStart: now,
+          effectiveEnd,
+          remainingCredits: null,
+          consumptionCounters: null,
+          locale,
+        };
+      } else {
+        const currentPeriodEnd = new Date(
+          now.getTime() + RECURRING_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+        );
+        const consumptionCounters =
+          addonId === 'content_studio_pack'
+            ? { videoEditsUsed: 0, scriptsUsed: 0 }
+            : {};
+
+        insertValues = {
+          userId,
+          addonId,
+          lifecycle: 'recurring' as const,
+          status: 'active' as const,
+          currentPeriodStart: now,
+          currentPeriodEnd,
+          remainingCredits: null,
+          consumptionCounters,
+          locale,
+        };
+      }
+
+      const [created] = await tx
+        .insert(addOnPurchases)
+        .values(insertValues)
+        .returning();
+
       await this.subscriptionEventsRepository.append(tx, {
         userId,
         subscriptionId: sub?.id,

@@ -222,6 +222,193 @@ export class SubscriptionsService {
   }
 
   /**
+   * Prepares an upgrade by computing the charge amount and returning the
+   * "intent" — the data the client needs to ask Razorpay Checkout for a
+   * payment. Does not mutate the subscription or charge anything.
+   *
+   * Used by the interactive Razorpay flow:
+   *
+   *    1. client → POST /v1/subscriptions/me/upgrade/order   (this method)
+   *    2. server → returns { amountMinor, currency, idempotencyKey }
+   *    3. client → opens Razorpay Checkout with the order
+   *    4. user pays
+   *    5. client → POST /v1/subscriptions/me/upgrade/verify  (finalize method)
+   *    6. server → verifies signature, runs the existing transactional upgrade
+   *
+   * Validation here mirrors the guards in {@link upgrade}: subscription
+   * must exist, payment_owed must be false, and target tier must be a
+   * strict upgrade.
+   *
+   * Requirements: 6.1, 6.2, 6.3, 6.7, 22.5
+   */
+  async prepareUpgrade(
+    userId: string,
+    targetTier: 'growth' | 'studio',
+  ): Promise<{
+    amountMinor: number;
+    currency: 'INR' | 'USD';
+    idempotencyKey: string;
+    description: string;
+  }> {
+    const sub = await this.db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, userId),
+    });
+    if (!sub) throw new SubscriptionNotFoundError(userId);
+    if (sub.paymentOwed) throw new PaymentOwedError(userId);
+
+    if (tierRank(targetTier) <= tierRank(sub.tier as Tier)) {
+      throw new InvalidDowngradeTargetError(
+        'Target tier must be higher rank than current tier',
+      );
+    }
+
+    const { plan: oldPlan } = await this.plansCatalogService.getPlan(
+      sub.tier as Tier,
+      sub.locale,
+    );
+    const { plan: newPlan } = await this.plansCatalogService.getPlan(
+      targetTier,
+      sub.locale,
+    );
+
+    let amountMinor: number;
+    if (sub.tier === 'creator') {
+      amountMinor = newPlan.priceMinorUnits;
+    } else {
+      const elapsedDays = Math.floor(
+        (Date.now() - sub.currentPeriodStart.getTime()) /
+          (24 * 60 * 60 * 1000),
+      );
+      amountMinor = this.moneyMathService.proratedUpgrade(
+        oldPlan.priceMinorUnits,
+        newPlan.priceMinorUnits,
+        elapsedDays,
+        30,
+      );
+    }
+
+    // Same shape as the idempotency key used inside upgrade() so a
+    // subsequent finalizeUpgrade call writes the payment row with a
+    // stable, deduplicatable key.
+    const idempotencyKey = `upgrade:${sub.id}:${targetTier}:${sub.currentPeriodStart.toISOString()}`;
+
+    return {
+      amountMinor,
+      currency: newPlan.currency as 'INR' | 'USD',
+      idempotencyKey,
+      description: `Upgrade to ${targetTier}`,
+    };
+  }
+
+  /**
+   * Finalizes an upgrade after the client has successfully paid via
+   * Razorpay Checkout. The caller is expected to have verified the
+   * payment signature *before* invoking this method (e.g. via
+   * RazorpayPaymentAdapter.verifyPayment); this method only persists
+   * the side-effects under a single transaction.
+   *
+   * Mirrors the existing {@link upgrade} method, but the charge step is
+   * already done so we record the externally-issued provider ref instead
+   * of calling PaymentPort.charge().
+   *
+   * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7
+   */
+  async finalizeUpgrade(
+    userId: string,
+    targetTier: 'growth' | 'studio',
+    providerRef: string,
+  ): Promise<Subscription> {
+    return this.db.transaction(async (tx: any) => {
+      const sub = await tx.query.subscriptions.findFirst({
+        where: eq(subscriptions.userId, userId),
+      });
+      if (!sub) throw new SubscriptionNotFoundError(userId);
+      if (sub.paymentOwed) throw new PaymentOwedError(userId);
+      if (tierRank(targetTier) <= tierRank(sub.tier as Tier)) {
+        throw new InvalidDowngradeTargetError(
+          'Target tier must be higher rank than current tier',
+        );
+      }
+
+      const { plan: oldPlan } = await this.plansCatalogService.getPlan(
+        sub.tier as Tier,
+        sub.locale,
+      );
+      const { plan: newPlan } = await this.plansCatalogService.getPlan(
+        targetTier,
+        sub.locale,
+      );
+
+      let chargeAmount: number;
+      let nextStart: Date = sub.currentPeriodStart;
+      let nextEnd: Date = sub.currentPeriodEnd;
+      let resetCounters = false;
+
+      if (sub.tier === 'creator') {
+        chargeAmount = newPlan.priceMinorUnits;
+        nextStart = new Date();
+        nextEnd = addDays(nextStart, 30);
+        resetCounters = true;
+      } else {
+        const elapsedDays = Math.floor(
+          (Date.now() - sub.currentPeriodStart.getTime()) /
+            (24 * 60 * 60 * 1000),
+        );
+        chargeAmount = this.moneyMathService.proratedUpgrade(
+          oldPlan.priceMinorUnits,
+          newPlan.priceMinorUnits,
+          elapsedDays,
+          30,
+        );
+      }
+
+      const idempotencyKey = `upgrade:${sub.id}:${targetTier}:${sub.currentPeriodStart.toISOString()}`;
+
+      // Record the externally-collected payment so reversal lookups by
+      // providerRef still work, and so audit/payment ledgers stay consistent.
+      await tx
+        .insert(payments)
+        .values({
+          userId,
+          amountMinorUnits: chargeAmount,
+          currency: newPlan.currency,
+          providerRef,
+          status: 'succeeded' as const,
+          idempotencyKey,
+          chargedAt: new Date(),
+        })
+        .onConflictDoNothing();
+
+      const [updated] = await tx
+        .update(subscriptions)
+        .set({
+          tier: targetTier,
+          currentPeriodStart: nextStart,
+          currentPeriodEnd: nextEnd,
+          pendingTier: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(subscriptions.id, sub.id))
+        .returning();
+
+      if (resetCounters) {
+        await tx.delete(usageCounters).where(eq(usageCounters.userId, userId));
+      }
+
+      await this.subscriptionEventsRepository.append(tx, {
+        userId,
+        subscriptionId: sub.id,
+        eventType: 'tier_upgraded',
+        actorType: 'user',
+        beforeSnapshot: sub as Record<string, unknown>,
+        afterSnapshot: updated as Record<string, unknown>,
+      });
+
+      return updated;
+    });
+  }
+
+  /**
    * Handles a payment reversal (chargeback, refund, network reversal) for a
    * subscription charge.
    *
