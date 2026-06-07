@@ -166,6 +166,11 @@ export class InfluencerSessionService {
     const influencerId = await this.upsertInfluencer(input.instagramUserId, input.username);
     await this.upsertSocialAccount(influencerId, input);
 
+    // Ensure a default "creator" subscription exists for this influencer.
+    // Runs on every login so existing influencers who pre-date the feature
+    // get backfilled without a separate migration script.
+    await this.ensureDefaultSubscription(influencerId);
+
     // Replace any existing active session for this influencer.
     await db
       .delete(influencerSessions)
@@ -201,13 +206,10 @@ export class InfluencerSessionService {
       .insert(influencers)
       .values({ instagramUserId, username: username ?? null })
       .returning({ influencerId: influencers.influencerId });
-
-    // Create default "creator" (free) subscription for the new influencer.
-    await this.createDefaultSubscription(row.influencerId);
     return row.influencerId;
   }
 
-  private async createDefaultSubscription(influencerId: string): Promise<void> {
+  private async ensureDefaultSubscription(influencerId: string): Promise<void> {
     const db = this.requireDb();
     // Import dynamically to avoid circular deps at module load time.
     const { subscriptions } = await import('../../database/schema/billing.schema');
