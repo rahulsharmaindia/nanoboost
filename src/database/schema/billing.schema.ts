@@ -37,17 +37,27 @@ export const subscriptionPlans = pgTable(
     id: text('id').primaryKey().$defaultFn(() => randomUUID()),
     tier: tierEnum('tier').notNull(),
     locale: localeEnum('locale').notNull(),
+    name: text('name').notNull(),
+    tagline: text('tagline'),
     priceMinorUnits: integer('price_minor_units').notNull(),
     currency: currencyEnum('currency').notNull(),
+    billingPeriod: text('billing_period').notNull().default('monthly'),
     isMostPopular: boolean('is_most_popular').notNull().default(false),
-    analyticsWindowDays: integer('analytics_window_days').notNull(),
+    aiTokenCap: integer('ai_token_cap').notNull(),
     applicationCapMonthly: integer('application_cap_monthly').notNull(),
     proposalCapMonthly: integer('proposal_cap_monthly').notNull(),
     aiToolCapMonthly: integer('ai_tool_cap_monthly').notNull(),
     commissionPct: integer('commission_pct').notNull(),
     concurrentCampaignsCap: integer('concurrent_campaigns_cap').notNull(),
+    analyticsWindowDays: integer('analytics_window_days').notNull(),
     supportLevel: text('support_level').notNull(),
     earlyAccessHours: integer('early_access_hours').notNull().default(0),
+    features: jsonb('features').notNull().$type<Array<{
+      key: string;
+      label: string;
+      included: boolean;
+      limit?: number;
+    }>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
