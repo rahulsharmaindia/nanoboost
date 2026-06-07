@@ -5,7 +5,7 @@
 //
 // Usage (PROBE_PASSWORD is read from env — never via argv):
 //   PROBE_BUSINESS_ID=1111 PROBE_PASSWORD='...' \
-//     PROBE_BASE_URL='https://nanoboost-staging.up.railway.app' \
+//     PROBE_BASE_URL='https://nanoboost-production.up.railway.app' \
 //     npx tsx scripts/brand-login-http-probe.ts
 
 import 'dotenv/config';
