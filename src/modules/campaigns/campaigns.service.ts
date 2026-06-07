@@ -316,14 +316,15 @@ export class CampaignsService {
     const published = await this.campaignsRepository.listPublished();
 
     const brandIds = published.map((c) => c.brandId);
-    const brandNames = await this.campaignsRepository.getBrandNames(brandIds);
+    const brandInfo = await this.campaignsRepository.getBrandInfo(brandIds);
     const approvedCounts = await this.campaignsRepository.getApprovedCounts(
       published.map((c) => c.campaignId),
     );
 
     const results = published.map((campaign) => ({
       ...campaign,
-      brandName: brandNames[campaign.brandId] ?? 'Unknown Brand',
+      brandName: brandInfo[campaign.brandId]?.name ?? 'Unknown Brand',
+      businessId: brandInfo[campaign.brandId]?.businessId ?? null,
       approvedCount: approvedCounts[campaign.campaignId] ?? 0,
     }));
 
@@ -414,7 +415,7 @@ export class CampaignsService {
       (c): c is NonNullable<typeof c> => !!c,
     );
     const brandIds = campaignsList.map((c) => c.brandId);
-    const brandNames = await this.campaignsRepository.getBrandNames(brandIds);
+    const brandInfo = await this.campaignsRepository.getBrandInfo(brandIds);
     const approvedCounts = await this.campaignsRepository.getApprovedCounts(
       campaignsList.map((c) => c.campaignId),
     );
@@ -426,7 +427,8 @@ export class CampaignsService {
 
       results.push({
         ...campaign,
-        brandName: brandNames[campaign.brandId] ?? 'Unknown Brand',
+        brandName: brandInfo[campaign.brandId]?.name ?? 'Unknown Brand',
+        businessId: brandInfo[campaign.brandId]?.businessId ?? null,
         approvedCount: approvedCounts[campaign.campaignId] ?? 0,
         applicationStatus: app.status,
         applicationId: app.applicationId,

@@ -217,6 +217,27 @@ export class CampaignsRepository {
     return map;
   }
 
+  /**
+   * Look up brand display name + businessId slug for a set of brandIds.
+   * Returns a map keyed by brandId. Used to enrich campaign payloads so
+   * the client can navigate to / follow a brand by its stable slug.
+   */
+  async getBrandInfo(
+    brandIds: string[],
+  ): Promise<Record<string, { name: string; businessId: string }>> {
+    if (brandIds.length === 0) return {};
+    const unique = Array.from(new Set(brandIds));
+    const rows = await this.db
+      .select({ brandId: brands.brandId, name: brands.name, businessId: brands.businessId })
+      .from(brands)
+      .where(inArray(brands.brandId, unique));
+    const map: Record<string, { name: string; businessId: string }> = {};
+    for (const row of rows) {
+      map[row.brandId] = { name: row.name, businessId: row.businessId };
+    }
+    return map;
+  }
+
   // ══════════════════════════════════════════════════════════════
   // Applications
   // ══════════════════════════════════════════════════════════════
