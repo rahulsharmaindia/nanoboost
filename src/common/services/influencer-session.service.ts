@@ -201,7 +201,31 @@ export class InfluencerSessionService {
       .insert(influencers)
       .values({ instagramUserId, username: username ?? null })
       .returning({ influencerId: influencers.influencerId });
+
+    // Create default "creator" (free) subscription for the new influencer.
+    await this.createDefaultSubscription(row.influencerId);
     return row.influencerId;
+  }
+
+  private async createDefaultSubscription(influencerId: string): Promise<void> {
+    const db = this.requireDb();
+    // Import dynamically to avoid circular deps at module load time.
+    const { subscriptions } = await import('../../database/schema/billing.schema');
+    const existing = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.influencerId, influencerId));
+    if (existing.length > 0) return; // already has a subscription
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await db.insert(subscriptions).values({
+      influencerId,
+      tier: 'creator',
+      status: 'active',
+      currentPeriodStart: now,
+      currentPeriodEnd: periodEnd,
+      locale: 'IN',
+    });
   }
 
   private async upsertSocialAccount(
