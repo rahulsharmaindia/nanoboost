@@ -44,10 +44,6 @@ export const subscriptionPlans = pgTable(
     billingPeriod: text('billing_period').notNull().default('monthly'),
     isMostPopular: boolean('is_most_popular').notNull().default(false),
     aiTokenCap: integer('ai_token_cap').notNull(),
-    priceMinorUnits: integer('price_minor_units').notNull(),
-    currency: currencyEnum('currency').notNull(),
-    isMostPopular: boolean('is_most_popular').notNull().default(false),
-    analyticsWindowDays: integer('analytics_window_days').notNull(),
     applicationCapMonthly: integer('application_cap_monthly').notNull(),
     proposalCapMonthly: integer('proposal_cap_monthly').notNull(),
     aiToolCapMonthly: integer('ai_tool_cap_monthly').notNull(),
@@ -62,8 +58,6 @@ export const subscriptionPlans = pgTable(
       included: boolean;
       limit?: number;
     }>>(),
-    supportLevel: text('support_level').notNull(),
-    earlyAccessHours: integer('early_access_hours').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
