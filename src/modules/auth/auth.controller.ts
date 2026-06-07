@@ -1,11 +1,19 @@
 // ── Auth controller ──────────────────────────────────────────
-// Handles OAuth start, callback redirect, status polling, and logout.
-// All routes are public — auth happens inside the OAuth flow itself.
+// OAuth start, callback redirect, status polling, and logout.
+// All routes are public — auth happens inside the OAuth flow.
+//
+// Flow:
+//   1. GET /api/auth/start → { state, auth_url }. Client opens
+//      auth_url (state travels to Instagram and back).
+//   2. Instagram → GET /auth/callback?code&state. We exchange the
+//      code, issue an influencer session, and redirect back to the
+//      app with ?status=authenticated&session_id=<id>.
+//   3. The client reads session_id from the redirect URL.
 
 import { Controller, Get, Logger, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { SessionService } from '../../common/services/session.service';
+import { InfluencerSessionService } from '../../common/services/influencer-session.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { env } from '../../config/env';
 
@@ -15,20 +23,9 @@ export class AuthController {
 
   constructor(
     private readonly authService: AuthService,
-    private readonly sessionService: SessionService,
+    private readonly sessionService: InfluencerSessionService,
   ) {}
 
-  /// Build the post-callback redirect URL.
-  ///
-  /// Resolution order:
-  ///   1. Session-scoped `web_redirect_uri` (set by the PWA when it
-  ///      called `/api/auth/start` with `platform=web`).
-  ///   2. `WEB_FALLBACK_URI` env var — covers desktop browsers that
-  ///      somehow lost their session-scoped URI (missing migration,
-  ///      stale client bundle, etc.) so they don't end up on a
-  ///      `iginsights://` URL the browser can't dispatch.
-  ///   3. The mobile custom scheme `iginsights://auth?…` — last
-  ///      resort, only useful for native iOS/Android clients.
   private buildRedirectUrl(webUri: string | null, params: string): string {
     const target = webUri ?? env.webFallbackUri ?? null;
     if (target) {
@@ -36,9 +33,7 @@ export class AuthController {
       return `${target}${separator}${params}`;
     }
     this.logger.warn(
-      'OAuth callback falling back to iginsights:// — desktop ' +
-        'browsers will see a blank page. Set WEB_FALLBACK_URI to ' +
-        'the PWA origin to fix.',
+      'OAuth callback falling back to iginsights:// — set WEB_FALLBACK_URI to the PWA origin.',
     );
     return `iginsights://auth?${params}`;
   }
@@ -50,15 +45,23 @@ export class AuthController {
     @Query('platform') platform?: string,
     @Query('web_redirect_uri') webRedirectUri?: string,
   ) {
-    const { sessionId, authUrl } = await this.authService.startOAuth();
-    if (platform === 'web' && webRedirectUri) {
-      // Persist on the session row so the callback (potentially on a
-      // different replica or after a restart) can rebuild the URL.
-      await this.sessionService.update(sessionId, {
-        webRedirectUri,
-      });
+    const webUri = platform === 'web' && webRedirectUri ? webRedirectUri : null;
+    const { state, pollToken, authUrl } = await this.authService.startOAuth(webUri);
+    return { state, poll_token: pollToken, auth_url: authUrl };
+  }
+
+  // GET /api/auth/poll?poll_token=...
+  // Fallback for environments where the redirect-back is unreliable
+  // (e.g. iOS PWA standalone). The poll token is private to the client
+  // and never travels to Instagram. Single-use.
+  @Public()
+  @Get('api/auth/poll')
+  async pollAuth(@Query('poll_token') pollToken: string) {
+    if (!pollToken) {
+      return { status: 'not_found' };
     }
-    return { session_id: sessionId, auth_url: authUrl };
+    const result = await this.authService.pollAuth(pollToken);
+    return { status: result.status, session_id: result.sessionId ?? null };
   }
 
   // GET /auth/callback  (Instagram redirects here)
@@ -71,28 +74,19 @@ export class AuthController {
     @Query('error_description') errorDescription: string,
     @Res() res: Response,
   ) {
-    const session = state ? await this.sessionService.get(state) : null;
-    const webUri = session?.webRedirectUri ?? null;
+    const oauthState = state ? await this.sessionService.getOAuthState(state) : null;
+    const webUri = oauthState?.webRedirectUri ?? null;
 
     if (error) {
       return res.redirect(
         this.buildRedirectUrl(
           webUri,
-          `status=error&session_id=${state}&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`,
+          `status=error&reason=${encodeURIComponent(errorDescription || 'Authorization denied')}`,
         ),
       );
     }
 
-    if (!state) {
-      return res.redirect(
-        this.buildRedirectUrl(
-          null,
-          `status=error&reason=${encodeURIComponent('Session expired. Please try again.')}`,
-        ),
-      );
-    }
-
-    if (!session) {
+    if (!state || !oauthState) {
       return res.redirect(
         this.buildRedirectUrl(
           null,
@@ -104,20 +98,17 @@ export class AuthController {
     const code = (rawCode || '').replace(/#_$/, '');
     const result = await this.authService.handleCallback(code, state);
 
-    if (result.status === 'error') {
+    if (result.status === 'error' || !result.sessionId) {
       return res.redirect(
         this.buildRedirectUrl(
           webUri,
-          `status=error&session_id=${state}&reason=${encodeURIComponent('Authentication failed')}`,
+          `status=error&reason=${encodeURIComponent('Authentication failed')}`,
         ),
       );
     }
 
     return res.redirect(
-      this.buildRedirectUrl(
-        webUri,
-        `status=authenticated&session_id=${state}`,
-      ),
+      this.buildRedirectUrl(webUri, `status=authenticated&session_id=${result.sessionId}`),
     );
   }
 
@@ -139,7 +130,6 @@ export class AuthController {
     const sessionId =
       req.headers['authorization']?.replace('Bearer ', '') ||
       (req.query.session_id as string);
-
     if (sessionId) {
       await this.authService.logout(sessionId);
     }

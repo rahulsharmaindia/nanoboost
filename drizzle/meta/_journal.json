@@ -5,57 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1777967308812,
-      "tag": "0000_regular_boomerang",
+      "when": 1780849492915,
+      "tag": "0000_init_entity_model",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1778000000000,
-      "tag": "0001_indexes_and_rls",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1778200000000,
-      "tag": "0002_sessions_and_brand_credentials",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1778300000000,
-      "tag": "0003_sessions_token_lifetime",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1778881341741,
-      "tag": "0004_add_brand_follows",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1778881400000,
-      "tag": "0005_enable_rls_on_brand_follows",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1778881500000,
-      "tag": "0006_session_web_redirect",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1778881600000,
-      "tag": "0007_social_links_jsonb",
+      "when": 1780852916838,
+      "tag": "0001_oauth_poll_token",
       "breakpoints": true
     }
   ]

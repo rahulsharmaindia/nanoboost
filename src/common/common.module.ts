@@ -1,17 +1,30 @@
 // ── Common module ────────────────────────────────────────────
-// Provides shared services (SessionService, guards) globally.
-// Import this module once in AppModule — all other modules get
-// access to SessionService and guards without re-importing.
+// Provides shared services (session services, guards) globally.
+// Import once in AppModule — all other modules get access without
+// re-importing.
 
 import { Global, Module } from '@nestjs/common';
-import { SessionService } from './services/session.service';
+import { InfluencerSessionService } from './services/influencer-session.service';
+import { BrandSessionService } from './services/brand-session.service';
 import { TokenCipher } from './services/token-cipher.service';
 import { AuthGuard } from './guards/auth.guard';
 import { BrandAuthGuard } from './guards/brand-auth.guard';
 
 @Global()
 @Module({
-  providers: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
-  exports: [TokenCipher, SessionService, AuthGuard, BrandAuthGuard],
+  providers: [
+    TokenCipher,
+    InfluencerSessionService,
+    BrandSessionService,
+    AuthGuard,
+    BrandAuthGuard,
+  ],
+  exports: [
+    TokenCipher,
+    InfluencerSessionService,
+    BrandSessionService,
+    AuthGuard,
+    BrandAuthGuard,
+  ],
 })
 export class CommonModule {}

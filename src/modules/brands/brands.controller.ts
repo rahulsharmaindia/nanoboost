@@ -32,14 +32,14 @@ export class BrandsController {
   @UseGuards(BrandAuthGuard)
   @Get()
   getProfile(@Req() req: Request) {
-    return this.brandsService.getProfile((req as any).sessionId);
+    return this.brandsService.getProfile((req as any).brandId);
   }
 
   // PATCH /api/brand
   @UseGuards(BrandAuthGuard)
   @Patch()
   updateProfile(@Req() req: Request, @Body() dto: UpdateBrandDto) {
-    return this.brandsService.updateProfile((req as any).sessionId, dto);
+    return this.brandsService.updateProfile((req as any).brandId, dto);
   }
 
   // GET /api/brands/:businessId — public brand info for influencers

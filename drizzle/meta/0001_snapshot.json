@@ -1,6 +1,6 @@
 {
-  "id": "78d8f96d-795f-441f-b163-97eeb9f86ed6",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "6497be5b-2698-4bdd-9e31-b277eb592620",
+  "prevId": "78d8f96d-795f-441f-b163-97eeb9f86ed6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14,8 +14,27 @@
           "primaryKey": true,
           "notNull": true
         },
+        "poll_token": {
+          "name": "poll_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "web_redirect_uri": {
           "name": "web_redirect_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_status": {
+          "name": "result_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "session_id": {
+          "name": "session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -34,7 +53,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "uq_oauth_poll_token": {
+          "name": "uq_oauth_poll_token",
+          "columns": [
+            {
+              "expression": "poll_token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
