@@ -1,18 +1,15 @@
 // ── Brands service ───────────────────────────────────────────
-// Brand registration, login, and profile retrieval. All data is
-// persisted to the database — credentials live in the
-// brand_credentials table, profile data in brand_profiles.
-//
-// Sessions are DB-backed via SessionService.
+// Brand registration, login, and profile management. Brands are a
+// first-class entity: registration writes `brands` +
+// `brand_credentials`. Sessions are DB-backed via
+// BrandSessionService.
 
 import { Injectable, Inject } from '@nestjs/common';
 import { createHash, scryptSync, randomBytes } from 'crypto';
 import { eq } from 'drizzle-orm';
-import { SessionService } from '../../common/services/session.service';
+import { BrandSessionService } from '../../common/services/brand-session.service';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
-import { brandProfiles } from '../../database/schema/brands.schema';
-import { brandCredentials } from '../../database/schema/brand-credentials.schema';
-import { users } from '../../database/schema/users.schema';
+import { brands, brandCredentials } from '../../database/schema/brands.schema';
 import { RegisterBrandDto } from './dto/register-brand.dto';
 import { LoginBrandDto } from './dto/login-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
@@ -21,7 +18,6 @@ import {
   UnauthorizedError,
   NotFoundError,
 } from '../../common/errors/app.errors';
-import { randomUUID } from 'crypto';
 
 interface BrandResponseData {
   name: string;
@@ -38,7 +34,7 @@ export type { BrandResponseData };
 @Injectable()
 export class BrandsService {
   constructor(
-    private readonly sessionService: SessionService,
+    private readonly brandSessionService: BrandSessionService,
     @Inject(DRIZZLE_CLIENT) private readonly db: any,
   ) {
     if (!db) {
@@ -57,7 +53,6 @@ export class BrandsService {
   }
 
   private verifyPassword(password: string, stored: string): boolean {
-    // Legacy SHA-256 format (no colon separator)
     if (!stored.includes(':')) {
       return createHash('sha256').update(password).digest('hex') === stored;
     }
@@ -72,8 +67,6 @@ export class BrandsService {
       industry: brand.industry,
       website: brand.website,
       description: brand.description,
-      // jsonb column comes back as a typed object (or null) from
-      // the driver — no parsing needed.
       socialLinks: brand.socialLinks ?? null,
       businessId: brand.businessId,
     };
@@ -82,55 +75,41 @@ export class BrandsService {
   // ── Registration ───────────────────────────────────────────
 
   async register(dto: RegisterBrandDto): Promise<{ sessionId: string; brandData: BrandResponseData }> {
-    // Uniqueness check
     const existing = await this.db
       .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, dto.businessId));
+      .from(brands)
+      .where(eq(brands.businessId, dto.businessId));
     if (existing.length > 0) {
       throw new ConflictError('Business ID already taken');
     }
 
-    const userId = `brand_${dto.businessId}_${randomUUID()}`;
-    const email = `${dto.businessId}@brand.local`;
-
-    // All three inserts must succeed atomically — otherwise a partial
-    // failure leaves the system with a brand profile but no credentials
-    // (or vice versa) and the next registration attempt fails the
-    // uniqueness check above.
-    await this.db.transaction(async (tx: any) => {
-      await tx.insert(users).values({
-        id: userId,
-        email,
-        role: 'brand',
-      });
-
-      await tx.insert(brandProfiles).values({
-        userId,
-        businessId: dto.businessId,
-        name: dto.name,
-        logo: dto.logo || null,
-        industry: dto.industry,
-        website: dto.website || null,
-        description: dto.description || null,
-        socialLinks: dto.socialLinks ?? null,
-      });
+    const brandId = await this.db.transaction(async (tx: any) => {
+      const [created] = await tx
+        .insert(brands)
+        .values({
+          businessId: dto.businessId,
+          name: dto.name,
+          logo: dto.logo || null,
+          industry: dto.industry,
+          website: dto.website || null,
+          description: dto.description || null,
+          socialLinks: dto.socialLinks ?? null,
+        })
+        .returning({ brandId: brands.brandId });
 
       await tx.insert(brandCredentials).values({
-        businessId: dto.businessId,
+        brandId: created.brandId,
         passwordHash: this.hashPassword(dto.password),
       });
+      return created.brandId;
     });
 
-    const sessionId = await this.sessionService.create({
-      businessId: dto.businessId,
-      status: 'authenticated',
-    });
+    const sessionId = await this.brandSessionService.create(brandId);
 
     const [profile] = await this.db
       .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, dto.businessId));
+      .from(brands)
+      .where(eq(brands.brandId, brandId));
 
     return { sessionId, brandData: this.toResponse(profile) };
   }
@@ -140,100 +119,61 @@ export class BrandsService {
   async login(dto: LoginBrandDto): Promise<{ sessionId: string; brandData: BrandResponseData }> {
     const profiles = await this.db
       .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, dto.businessId));
-
+      .from(brands)
+      .where(eq(brands.businessId, dto.businessId));
     if (profiles.length === 0) {
       throw new UnauthorizedError('Invalid credentials');
     }
+    const brand = profiles[0];
 
     const credentials = await this.db
       .select()
       .from(brandCredentials)
-      .where(eq(brandCredentials.businessId, dto.businessId));
-
+      .where(eq(brandCredentials.brandId, brand.brandId));
     if (credentials.length === 0) {
       throw new UnauthorizedError('Invalid credentials');
     }
-
     if (!this.verifyPassword(dto.password, credentials[0].passwordHash)) {
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    const sessionId = await this.sessionService.create({
-      businessId: dto.businessId,
-      status: 'authenticated',
-    });
-
-    return { sessionId, brandData: this.toResponse(profiles[0]) };
+    const sessionId = await this.brandSessionService.create(brand.brandId);
+    return { sessionId, brandData: this.toResponse(brand) };
   }
 
-  // ── Profile ────────────────────────────────────────────────
+  // ── Profile (authenticated brand) ──────────────────────────
 
-  async getProfile(sessionId: string): Promise<BrandResponseData> {
-    const session = await this.sessionService.get(sessionId);
-    if (!session || !session.businessId) {
-      throw new NotFoundError('No brand registered');
-    }
-
-    const rows = await this.db
-      .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, session.businessId));
-
+  async getProfile(brandId: string): Promise<BrandResponseData> {
+    const rows = await this.db.select().from(brands).where(eq(brands.brandId, brandId));
     if (rows.length === 0) {
       throw new NotFoundError('No brand registered');
     }
-
     return this.toResponse(rows[0]);
   }
 
-  // ── Public profile (for influencers) ─────────────────────────
+  // ── Public profile (for influencers) ───────────────────────
 
   async getPublicProfile(businessId: string): Promise<BrandResponseData> {
-    const rows = await this.db
-      .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, businessId));
-
+    const rows = await this.db.select().from(brands).where(eq(brands.businessId, businessId));
     if (rows.length === 0) {
       throw new NotFoundError('Brand not found');
     }
-
     return this.toResponse(rows[0]);
   }
 
   // ── Update profile ─────────────────────────────────────────
-  //
-  // Partial update of the authenticated brand's own profile.
-  // businessId and password cannot be changed here — they need
-  // dedicated flows. Empty strings on optional fields are normalised
-  // to null so callers can clear a previously-set value.
-  async updateProfile(
-    sessionId: string,
-    dto: UpdateBrandDto,
-  ): Promise<BrandResponseData> {
-    const session = await this.sessionService.get(sessionId);
-    if (!session || !session.businessId) {
-      throw new NotFoundError('No brand registered');
-    }
 
-    const update: Record<string, unknown> = {
-      updatedAt: new Date(),
-    };
+  async updateProfile(brandId: string, dto: UpdateBrandDto): Promise<BrandResponseData> {
+    const update: Record<string, unknown> = { updatedAt: new Date() };
 
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
-      if (trimmed.length === 0) {
-        throw new ConflictError('Brand name cannot be empty');
-      }
+      if (trimmed.length === 0) throw new ConflictError('Brand name cannot be empty');
       update.name = trimmed;
     }
     if (dto.industry !== undefined) {
       const trimmed = dto.industry.trim();
-      if (trimmed.length === 0) {
-        throw new ConflictError('Industry cannot be empty');
-      }
+      if (trimmed.length === 0) throw new ConflictError('Industry cannot be empty');
       update.industry = trimmed;
     }
     if (dto.logo !== undefined) {
@@ -243,34 +183,22 @@ export class BrandsService {
       update.website = dto.website.trim().length > 0 ? dto.website.trim() : null;
     }
     if (dto.description !== undefined) {
-      update.description =
-        dto.description.trim().length > 0 ? dto.description.trim() : null;
+      update.description = dto.description.trim().length > 0 ? dto.description.trim() : null;
     }
     if (dto.socialLinks !== undefined) {
-      // Strip empty values so the stored JSON only contains real links.
       const cleaned: Record<string, string> = {};
       for (const [k, v] of Object.entries(dto.socialLinks ?? {})) {
-        if (typeof v === 'string' && v.trim().length > 0) {
-          cleaned[k] = v.trim();
-        }
+        if (typeof v === 'string' && v.trim().length > 0) cleaned[k] = v.trim();
       }
       update.socialLinks = Object.keys(cleaned).length > 0 ? cleaned : null;
     }
 
-    await this.db
-      .update(brandProfiles)
-      .set(update)
-      .where(eq(brandProfiles.businessId, session.businessId));
+    await this.db.update(brands).set(update).where(eq(brands.brandId, brandId));
 
-    const [updated] = await this.db
-      .select()
-      .from(brandProfiles)
-      .where(eq(brandProfiles.businessId, session.businessId));
-
+    const [updated] = await this.db.select().from(brands).where(eq(brands.brandId, brandId));
     if (!updated) {
       throw new NotFoundError('No brand registered');
     }
-
     return this.toResponse(updated);
   }
 }

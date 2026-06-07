@@ -16,7 +16,7 @@ export class SocialAccountsController {
   async getProfile(@Req() req: Request) {
     return this.socialAccountsService.getProfile(
       (req as any).accessToken,
-      (req as any).providerUserId,
+      (req as any).influencerId,
     );
   }
 
@@ -24,7 +24,7 @@ export class SocialAccountsController {
   @Get('api/profile/niches')
   async getNiches(@Req() req: Request) {
     const niches = await this.socialAccountsService.getNiches(
-      (req as any).providerUserId,
+      (req as any).influencerId,
     );
     return { niches };
   }
@@ -33,7 +33,7 @@ export class SocialAccountsController {
   @Patch('api/profile/niches')
   async updateNiches(@Req() req: Request, @Body() body: { niches: string[] }) {
     const niches = await this.socialAccountsService.updateNiches(
-      (req as any).providerUserId,
+      (req as any).influencerId,
       body.niches || [],
     );
     return { niches };

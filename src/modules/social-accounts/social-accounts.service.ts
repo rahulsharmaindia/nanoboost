@@ -13,15 +13,14 @@ export class SocialAccountsService {
     private readonly creatorProfileService: CreatorProfileService,
   ) {}
 
-  async getProfile(accessToken: string, providerUserId?: string) {
+  async getProfile(accessToken: string, influencerId?: string) {
     const data = await this.metaService.getUserProfile(accessToken);
 
-    // Cache profile data in DB (best-effort, non-blocking)
-    const userId = providerUserId || data.user_id || data.id;
-    if (userId) {
+    // Cache profile data on the influencers row (best-effort).
+    if (influencerId) {
       this.creatorProfileService
         .upsert({
-          providerUserId: String(userId),
+          influencerId,
           username: data.username,
           displayName: data.name,
           bio: data.biography,
@@ -52,11 +51,11 @@ export class SocialAccountsService {
     return this.metaService.getDemographicInsights(accessToken, metric, breakdown);
   }
 
-  async getNiches(providerUserId: string): Promise<string[]> {
-    return this.creatorProfileService.getNiches(providerUserId);
+  async getNiches(influencerId: string): Promise<string[]> {
+    return this.creatorProfileService.getNiches(influencerId);
   }
 
-  async updateNiches(providerUserId: string, niches: string[]): Promise<string[]> {
-    return this.creatorProfileService.updateNiches(providerUserId, niches);
+  async updateNiches(influencerId: string, niches: string[]): Promise<string[]> {
+    return this.creatorProfileService.updateNiches(influencerId, niches);
   }
 }

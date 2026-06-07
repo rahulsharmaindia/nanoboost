@@ -1,21 +1,29 @@
 // ── Follows service ──────────────────────────────────────────
-// Manages the set of brands a creator follows. Persisted to the
-// `brand_follows` table so the follow set survives reinstalls and
-// follows the creator across devices.
+// Manages the set of brands an influencer follows. Persisted to
+// `brand_follows` keyed on (influencer_id, brand_id) so it survives
+// reinstalls and follows the influencer across devices.
+//
+// The API works in terms of the brand's `business_id` (the stable,
+// human-readable slug); we resolve it to the internal brand_id.
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
-import { brandFollows } from '../../database/schema/follows.schema';
-import { SessionService } from '../../common/services/session.service';
-import { UnauthorizedError } from '../../common/errors/app.errors';
+import { brandFollows } from '../../database/schema/engagement.schema';
+import { brands } from '../../database/schema/brands.schema';
+import { NotFoundError } from '../../common/errors/app.errors';
+
+export interface FollowedBrand {
+  brandId: string;
+  businessId: string;
+  name: string;
+  logo: string | null;
+  createdAt: string;
+}
 
 @Injectable()
 export class FollowsService {
-  constructor(
-    @Inject(DRIZZLE_CLIENT) private readonly db: any,
-    private readonly sessionService: SessionService,
-  ) {
+  constructor(@Inject(DRIZZLE_CLIENT) private readonly db: any) {
     if (!db) {
       throw new Error(
         'DATABASE_URL is not configured. FollowsService requires a database connection.',
@@ -23,55 +31,57 @@ export class FollowsService {
     }
   }
 
-  private async requireCreator(sessionId: string): Promise<string> {
-    const session = await this.sessionService.get(sessionId);
-    if (!session || !session.providerUserId) {
-      throw new UnauthorizedError('Not authenticated');
+  private async resolveBrandId(businessId: string): Promise<string> {
+    const rows = await this.db
+      .select({ brandId: brands.brandId })
+      .from(brands)
+      .where(eq(brands.businessId, businessId));
+    if (rows.length === 0) {
+      throw new NotFoundError('Brand not found');
     }
-    return session.providerUserId;
+    return rows[0].brandId;
   }
 
-  async list(sessionId: string): Promise<Array<{ brandName: string; businessId: string | null; createdAt: string }>> {
-    const influencerId = await this.requireCreator(sessionId);
+  async list(influencerId: string): Promise<FollowedBrand[]> {
     const rows = await this.db
-      .select()
+      .select({
+        brandId: brandFollows.brandId,
+        businessId: brands.businessId,
+        name: brands.name,
+        logo: brands.logo,
+        createdAt: brandFollows.createdAt,
+      })
       .from(brandFollows)
+      .innerJoin(brands, eq(brandFollows.brandId, brands.brandId))
       .where(eq(brandFollows.influencerId, influencerId))
       .orderBy(desc(brandFollows.createdAt));
     return rows.map((r: any) => ({
-      brandName: r.brandName,
-      businessId: r.businessId ?? null,
+      brandId: r.brandId,
+      businessId: r.businessId,
+      name: r.name,
+      logo: r.logo ?? null,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
     }));
   }
 
-  async follow(
-    sessionId: string,
-    brandName: string,
-    businessId?: string | null,
-  ): Promise<void> {
-    const trimmed = (brandName ?? '').trim();
+  async follow(influencerId: string, businessId: string): Promise<void> {
+    const trimmed = (businessId ?? '').trim();
     if (trimmed.length === 0) return;
-    const influencerId = await this.requireCreator(sessionId);
-    // Insert is idempotent — uniqueIndex on (influencerId, brandName)
-    // turns duplicate follows into a no-op via ON CONFLICT.
+    const brandId = await this.resolveBrandId(trimmed);
     await this.db
       .insert(brandFollows)
-      .values({ influencerId, brandName: trimmed, businessId: businessId ?? null })
+      .values({ influencerId, brandId })
       .onConflictDoNothing();
   }
 
-  async unfollow(sessionId: string, brandName: string): Promise<void> {
-    const trimmed = (brandName ?? '').trim();
+  async unfollow(influencerId: string, businessId: string): Promise<void> {
+    const trimmed = (businessId ?? '').trim();
     if (trimmed.length === 0) return;
-    const influencerId = await this.requireCreator(sessionId);
+    const brandId = await this.resolveBrandId(trimmed);
     await this.db
       .delete(brandFollows)
       .where(
-        and(
-          eq(brandFollows.influencerId, influencerId),
-          eq(brandFollows.brandName, trimmed),
-        ),
+        and(eq(brandFollows.influencerId, influencerId), eq(brandFollows.brandId, brandId)),
       );
   }
 }

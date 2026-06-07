@@ -1,31 +1,45 @@
 // ── Account management controller ────────────────────────────
 // Data deletion (Meta requirement) and Instagram disconnect.
 
-import { Controller, Post, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Query, Req, Inject, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { randomBytes } from 'crypto';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { SessionService } from '../../common/services/session.service';
+import { InfluencerSessionService } from '../../common/services/influencer-session.service';
+import { DRIZZLE_CLIENT } from '../../database/database.module';
+import { accountDeletionRequests } from '../../database/schema/account-deletion.schema';
 import { Public } from '../../common/decorators/public.decorator';
 import { env } from '../../config/env';
 
 @Controller()
 export class AccountController {
-  constructor(private readonly sessionService: SessionService) {}
+  constructor(
+    private readonly sessionService: InfluencerSessionService,
+    @Inject(DRIZZLE_CLIENT) private readonly db: any,
+  ) {}
+
+  private async recordDeletionRequest(subjectId: string): Promise<string> {
+    const confirmationCode = randomBytes(8).toString('hex').toUpperCase();
+    if (this.db) {
+      await this.db.insert(accountDeletionRequests).values({
+        subjectType: 'influencer',
+        subjectId,
+        confirmationCode,
+        status: 'pending',
+      });
+    }
+    return confirmationCode;
+  }
 
   // POST /api/account/delete
   @UseGuards(AuthGuard)
   @Post('api/account/delete')
   async deleteAccount(@Req() req: Request) {
+    const influencerId = (req as any).influencerId as string;
     const sessionId = (req as any).sessionId as string;
-    const confirmationCode = randomBytes(8).toString('hex').toUpperCase();
-
-    // Invalidate the session — accessToken removed, status set to error.
-    await this.sessionService.update(sessionId, {
-      accessToken: null,
-      status: 'error',
-    });
-
+    const confirmationCode = await this.recordDeletionRequest(influencerId);
+    await this.sessionService.disconnect(influencerId);
+    await this.sessionService.remove(sessionId);
     return {
       confirmationCode,
       status: 'pending',
@@ -37,8 +51,8 @@ export class AccountController {
   @UseGuards(AuthGuard)
   @Post('api/account/disconnect')
   async disconnectInstagram(@Req() req: Request) {
-    const sessionId = (req as any).sessionId as string;
-    await this.sessionService.update(sessionId, { accessToken: null });
+    const influencerId = (req as any).influencerId as string;
+    await this.sessionService.disconnect(influencerId);
     return { status: 'disconnected' };
   }
 
@@ -50,15 +64,12 @@ export class AccountController {
     if (!signedRequest) {
       return { error: 'Missing signed_request' };
     }
-
     const [, payload] = signedRequest.split('.');
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     const userId = String(data.user_id);
 
-    const confirmationCode = randomBytes(8).toString('hex').toUpperCase();
-
-    // Invalidate all sessions for this Instagram user.
-    await this.sessionService.invalidateByProviderUserId(userId);
+    const confirmationCode = await this.recordDeletionRequest(userId);
+    await this.sessionService.invalidateByInstagramUserId(userId);
 
     return {
       url: `${env.serverUrl}/api/meta/deletion-status?code=${confirmationCode}`,

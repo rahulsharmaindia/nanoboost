@@ -8,14 +8,16 @@ import { randomUUID } from 'crypto';
 import { eq, and, inArray, or, desc, gt, sql } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { campaigns } from '../../database/schema/campaigns.schema';
-import { applications } from '../../database/schema/proposals.schema';
-import { submissions } from '../../database/schema/collaborations.schema';
-import { brandProfiles } from '../../database/schema/brands.schema';
+import {
+  campaignApplications as applications,
+  campaignSubmissions as submissions,
+} from '../../database/schema/engagement.schema';
+import { brands } from '../../database/schema/brands.schema';
 import { CampaignStatus, ApplicationStatus, SubmissionStatus } from './campaigns.types';
 
 export interface CampaignRecord {
   campaignId: string;
-  businessId: string;
+  brandId: string;
   status: CampaignStatus;
   createdAt: string;
   updatedAt: string;
@@ -59,12 +61,12 @@ export class CampaignsRepository {
   // Campaigns
   // ══════════════════════════════════════════════════════════════
 
-  async createCampaign(businessId: string, data: Record<string, any>): Promise<CampaignRecord> {
+  async createCampaign(brandId: string, data: Record<string, any>): Promise<CampaignRecord> {
     const campaignId = randomUUID();
 
     await this.db.insert(campaigns).values({
       campaignId,
-      businessId,
+      brandId,
       title: data.title,
       description: data.description,
       objective: data.objective,
@@ -125,11 +127,11 @@ export class CampaignsRepository {
     return this.mapDbCampaign(rows[0]);
   }
 
-  async listByBusiness(businessId: string): Promise<CampaignRecord[]> {
+  async listByBrand(brandId: string): Promise<CampaignRecord[]> {
     const rows = await this.db
       .select()
       .from(campaigns)
-      .where(eq(campaigns.businessId, businessId))
+      .where(eq(campaigns.brandId, brandId))
       .orderBy(desc(campaigns.createdAt));
     return rows.map((r: any) => this.mapDbCampaign(r));
   }
@@ -198,19 +200,19 @@ export class CampaignsRepository {
   }
 
   /**
-   * Look up brand display names for a set of businessIds in one query.
-   * Returns a map keyed by businessId.
+   * Look up brand display names for a set of brandIds in one query.
+   * Returns a map keyed by brandId.
    */
-  async getBrandNames(businessIds: string[]): Promise<Record<string, string>> {
-    if (businessIds.length === 0) return {};
-    const unique = Array.from(new Set(businessIds));
+  async getBrandNames(brandIds: string[]): Promise<Record<string, string>> {
+    if (brandIds.length === 0) return {};
+    const unique = Array.from(new Set(brandIds));
     const rows = await this.db
-      .select({ businessId: brandProfiles.businessId, name: brandProfiles.name })
-      .from(brandProfiles)
-      .where(inArray(brandProfiles.businessId, unique));
+      .select({ brandId: brands.brandId, name: brands.name })
+      .from(brands)
+      .where(inArray(brands.brandId, unique));
     const map: Record<string, string> = {};
     for (const row of rows) {
-      map[row.businessId] = row.name;
+      map[row.brandId] = row.name;
     }
     return map;
   }
@@ -354,7 +356,7 @@ export class CampaignsRepository {
   private mapDbCampaign(row: any): CampaignRecord {
     return {
       campaignId: row.campaignId,
-      businessId: row.businessId,
+      brandId: row.brandId,
       title: row.title,
       description: row.description,
       objective: row.objective,

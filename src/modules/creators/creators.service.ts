@@ -1,14 +1,14 @@
 // ── Creators service ─────────────────────────────────────────
-// Provides search and listing of creator profiles for brands.
+// Search and listing of influencer profiles for brands.
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ilike, or, desc, sql } from 'drizzle-orm';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
-import { creatorProfiles } from '../../database/schema/creators.schema';
+import { influencers } from '../../database/schema/influencers.schema';
 
 export interface CreatorSearchResult {
   id: string;
-  userId: string;
+  influencerId: string;
   username: string | null;
   displayName: string | null;
   bio: string | null;
@@ -28,9 +28,7 @@ export interface PaginatedCreators {
 
 @Injectable()
 export class CreatorsService {
-  constructor(
-    @Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any,
-  ) {}
+  constructor(@Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any) {}
 
   async search(params: {
     query?: string;
@@ -46,54 +44,39 @@ export class CreatorsService {
     const limit = Math.min(params.limit ?? 20, 50);
     const offset = (page - 1) * limit;
 
-    let baseQuery = this.db.select().from(creatorProfiles);
-
     const conditions: any[] = [];
-
     if (params.query && params.query.trim().length > 0) {
       const q = `%${params.query.trim()}%`;
       conditions.push(
         or(
-          ilike(creatorProfiles.username, q),
-          ilike(creatorProfiles.displayName, q),
-          ilike(creatorProfiles.bio, q),
+          ilike(influencers.username, q),
+          ilike(influencers.displayName, q),
+          ilike(influencers.bio, q),
         ),
       );
     }
-
     if (params.niche && params.niche.trim().length > 0) {
-      conditions.push(
-        ilike(creatorProfiles.niche, `%${params.niche.trim()}%`),
-      );
+      conditions.push(ilike(influencers.niche, `%${params.niche.trim()}%`));
     }
 
-    if (conditions.length > 0) {
-      for (const cond of conditions) {
-        baseQuery = baseQuery.where(cond);
-      }
+    let baseQuery = this.db.select().from(influencers);
+    let countQuery = this.db.select({ count: sql<number>`count(*)` }).from(influencers);
+    for (const cond of conditions) {
+      baseQuery = baseQuery.where(cond);
+      countQuery = countQuery.where(cond);
     }
 
-    // Get total count
-    let countQuery = this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(creatorProfiles);
-    if (conditions.length > 0) {
-      for (const cond of conditions) {
-        countQuery = countQuery.where(cond);
-      }
-    }
     const [{ count }] = await countQuery;
     const total = Number(count);
 
-    // Get paginated results
     const rows = await baseQuery
-      .orderBy(desc(creatorProfiles.followerCount))
+      .orderBy(desc(influencers.followerCount))
       .limit(limit)
       .offset(offset);
 
     const items: CreatorSearchResult[] = rows.map((r: any) => ({
-      id: r.id,
-      userId: r.userId,
+      id: r.influencerId,
+      influencerId: r.influencerId,
       username: r.username,
       displayName: r.displayName,
       bio: r.bio,
@@ -104,11 +87,6 @@ export class CreatorsService {
       niche: r.niche,
     }));
 
-    return {
-      items,
-      page,
-      total,
-      hasMore: offset + items.length < total,
-    };
+    return { items, page, total, hasMore: offset + items.length < total };
   }
 }
