@@ -374,6 +374,23 @@ export class CampaignsRepository {
   // DB → Record mappers
   // ══════════════════════════════════════════════════════════════
 
+  /**
+   * Parse a JSON-encoded text column without ever throwing. Columns like
+   * `postTypes`/`hashtags`/`deliverables` are written as JSON by
+   * createCampaign, but a malformed or legacy plain-string value must not
+   * 500 an entire list response — return undefined and let the client
+   * render the field as absent.
+   */
+  private safeJsonParse(value: any): any {
+    if (value == null) return undefined;
+    if (typeof value !== 'string') return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+
   private mapDbCampaign(row: any): CampaignRecord {
     return {
       campaignId: row.campaignId,
@@ -383,19 +400,19 @@ export class CampaignsRepository {
       objective: row.objective,
       campaignType: row.campaignType,
       platform: row.platform,
-      postTypes: row.postTypes ? JSON.parse(row.postTypes) : undefined,
-      deliverables: row.deliverables ? JSON.parse(row.deliverables) : undefined,
+      postTypes: this.safeJsonParse(row.postTypes),
+      deliverables: this.safeJsonParse(row.deliverables),
       contentCountPerInfluencer: row.contentCountPerInfluencer,
       captionGuidelines: row.captionGuidelines,
-      hashtags: row.hashtags ? JSON.parse(row.hashtags) : undefined,
-      mentions: row.mentions ? JSON.parse(row.mentions) : undefined,
+      hashtags: this.safeJsonParse(row.hashtags),
+      mentions: this.safeJsonParse(row.mentions),
       handleToTag: row.handleToTag,
-      referenceImages: row.referenceImages ? JSON.parse(row.referenceImages) : undefined,
+      referenceImages: this.safeJsonParse(row.referenceImages),
       ageGroupMin: row.ageGroupMin,
       ageGroupMax: row.ageGroupMax,
       gender: row.gender,
       targetLocation: row.targetLocation,
-      interests: row.interests ? JSON.parse(row.interests) : undefined,
+      interests: this.safeJsonParse(row.interests),
       languagePreference: row.languagePreference,
       totalBudget: Number(row.totalBudget),
       budgetPerCreator: Number(row.budgetPerCreator),
@@ -419,7 +436,7 @@ export class CampaignsRepository {
       audienceGenderRatio: row.audienceGenderRatio,
       totalSlots: row.totalSlots,
       reserveSlots: row.reserveSlots,
-      priorityInviteList: row.priorityInviteList ? JSON.parse(row.priorityInviteList) : undefined,
+      priorityInviteList: this.safeJsonParse(row.priorityInviteList),
       guidelinesDos: row.guidelinesDos,
       guidelinesDonts: row.guidelinesDonts,
       brandMessaging: row.brandMessaging,
