@@ -64,16 +64,22 @@ export class InfluencerSessionService {
 
   // ── OAuth handshake state ──────────────────────────────────
 
-  async createOAuthState(webRedirectUri?: string | null): Promise<string> {
+  // Returns the public `state` (sent to Instagram) and a private
+  // `pollToken` (kept by the client, used for the poll fallback).
+  async createOAuthState(
+    webRedirectUri?: string | null,
+  ): Promise<{ state: string; pollToken: string }> {
     const db = this.requireDb();
     const state = randomBytes(24).toString('base64url');
+    const pollToken = randomBytes(24).toString('base64url');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await db.insert(influencerOauthStates).values({
       state,
+      pollToken,
       webRedirectUri: webRedirectUri ?? null,
       expiresAt,
     });
-    return state;
+    return { state, pollToken };
   }
 
   async getOAuthState(state: string): Promise<{ webRedirectUri: string | null } | null> {
@@ -99,6 +105,56 @@ export class InfluencerSessionService {
     if (!state) return;
     const db = this.requireDb();
     await db.delete(influencerOauthStates).where(eq(influencerOauthStates.state, state));
+  }
+
+  // Record the issued session on the handshake row so the poll
+  // fallback can hand it back to the token holder. Keeps the row
+  // around (don't delete) until the poll consumes it or it expires.
+  async attachSessionToState(state: string, sessionId: string): Promise<void> {
+    const db = this.requireDb();
+    await db
+      .update(influencerOauthStates)
+      .set({ resultStatus: 'authenticated', sessionId })
+      .where(eq(influencerOauthStates.state, state));
+  }
+
+  async markStateError(state: string): Promise<void> {
+    const db = this.requireDb();
+    await db
+      .update(influencerOauthStates)
+      .set({ resultStatus: 'error' })
+      .where(eq(influencerOauthStates.state, state));
+  }
+
+  // Poll by the private token. Single-use: a terminal result
+  // (authenticated/error) consumes the row. Never keyed on `state`.
+  async pollByToken(
+    pollToken: string,
+  ): Promise<{ status: 'pending' | 'authenticated' | 'error' | 'not_found'; sessionId?: string }> {
+    if (!pollToken) return { status: 'not_found' };
+    const db = this.requireDb();
+    const rows = await db
+      .select()
+      .from(influencerOauthStates)
+      .where(eq(influencerOauthStates.pollToken, pollToken));
+    if (rows.length === 0) return { status: 'not_found' };
+    const row = rows[0];
+
+    const expiresAt = row.expiresAt instanceof Date ? row.expiresAt : new Date(row.expiresAt);
+    if (expiresAt.getTime() < Date.now()) {
+      await db.delete(influencerOauthStates).where(eq(influencerOauthStates.state, row.state));
+      return { status: 'not_found' };
+    }
+
+    if (row.resultStatus === 'authenticated') {
+      await db.delete(influencerOauthStates).where(eq(influencerOauthStates.state, row.state));
+      return { status: 'authenticated', sessionId: row.sessionId ?? undefined };
+    }
+    if (row.resultStatus === 'error') {
+      await db.delete(influencerOauthStates).where(eq(influencerOauthStates.state, row.state));
+      return { status: 'error' };
+    }
+    return { status: 'pending' };
   }
 
   // ── Completing a login ─────────────────────────────────────

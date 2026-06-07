@@ -17,8 +17,10 @@ export class AuthService {
     private readonly metaService: MetaService,
   ) {}
 
-  async startOAuth(webRedirectUri?: string | null): Promise<{ state: string; authUrl: string }> {
-    const state = await this.sessionService.createOAuthState(webRedirectUri);
+  async startOAuth(
+    webRedirectUri?: string | null,
+  ): Promise<{ state: string; pollToken: string; authUrl: string }> {
+    const { state, pollToken } = await this.sessionService.createOAuthState(webRedirectUri);
 
     const encode = encodeURIComponent;
     const authUrl =
@@ -30,7 +32,7 @@ export class AuthService {
       `&state=${state}`;
 
     this.logger.log(`OAuth state created: ${state}`);
-    return { state, authUrl };
+    return { state, pollToken, authUrl };
   }
 
   // Returns the issued session id on success, or null on failure.
@@ -43,7 +45,7 @@ export class AuthService {
     try {
       const tokenData = await this.metaService.exchangeCodeForToken(code);
       if (tokenData.error_message) {
-        await this.sessionService.deleteOAuthState(state);
+        await this.sessionService.markStateError(state);
         return { status: 'error', sessionId: null };
       }
 
@@ -64,14 +66,23 @@ export class AuthService {
         tokenExpiresAt,
       });
 
-      await this.sessionService.deleteOAuthState(state);
+      // Keep the handshake row so the poll fallback can deliver the
+      // session id to the client; it's consumed on poll or expiry.
+      await this.sessionService.attachSessionToState(state, sessionId);
       this.logger.log(`Authenticated influencer (ig user ${userId})`);
       return { status: 'authenticated', sessionId };
     } catch (err) {
-      await this.sessionService.deleteOAuthState(state);
+      await this.sessionService.markStateError(state);
       this.logger.error(`OAuth callback failed: ${(err as Error).message}`);
       return { status: 'error', sessionId: null };
     }
+  }
+
+  // Poll fallback — exchange the private poll token for the session.
+  async pollAuth(
+    pollToken: string,
+  ): Promise<{ status: string; sessionId?: string }> {
+    return this.sessionService.pollByToken(pollToken);
   }
 
   async getStatus(sessionId: string): Promise<{ status: string; userId: string | null }> {

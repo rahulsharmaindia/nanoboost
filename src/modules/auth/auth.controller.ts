@@ -46,8 +46,22 @@ export class AuthController {
     @Query('web_redirect_uri') webRedirectUri?: string,
   ) {
     const webUri = platform === 'web' && webRedirectUri ? webRedirectUri : null;
-    const { state, authUrl } = await this.authService.startOAuth(webUri);
-    return { state, auth_url: authUrl };
+    const { state, pollToken, authUrl } = await this.authService.startOAuth(webUri);
+    return { state, poll_token: pollToken, auth_url: authUrl };
+  }
+
+  // GET /api/auth/poll?poll_token=...
+  // Fallback for environments where the redirect-back is unreliable
+  // (e.g. iOS PWA standalone). The poll token is private to the client
+  // and never travels to Instagram. Single-use.
+  @Public()
+  @Get('api/auth/poll')
+  async pollAuth(@Query('poll_token') pollToken: string) {
+    if (!pollToken) {
+      return { status: 'not_found' };
+    }
+    const result = await this.authService.pollAuth(pollToken);
+    return { status: result.status, session_id: result.sessionId ?? null };
   }
 
   // GET /auth/callback  (Instagram redirects here)

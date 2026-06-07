@@ -68,12 +68,33 @@ export const influencerSocialAccounts = pgTable(
 
 // Transient OAuth handshake state (was the `pending` session rows).
 // Short TTL, purged after callback.
-export const influencerOauthStates = pgTable('influencer_oauth_states', {
-  state: text('state').primaryKey(),
-  webRedirectUri: text('web_redirect_uri'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
+//
+// Two tokens are minted per flow:
+//   • state      — the public CSRF token that travels to Instagram and
+//                  back via the redirect. NOT a credential.
+//   • pollToken  — a private secret kept by the client and never sent
+//                  to Instagram. The client polls with it to learn the
+//                  issued session id (fallback for environments where
+//                  the redirect-back is unreliable, e.g. iOS PWA
+//                  standalone). The poll is single-use.
+//
+// resultStatus flips pending → authenticated|error at callback time;
+// sessionId holds the issued influencer session once authenticated.
+export const influencerOauthStates = pgTable(
+  'influencer_oauth_states',
+  {
+    state: text('state').primaryKey(),
+    pollToken: text('poll_token').notNull(),
+    webRedirectUri: text('web_redirect_uri'),
+    resultStatus: text('result_status').notNull().default('pending'),
+    sessionId: text('session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pollTokenIdx: uniqueIndex('uq_oauth_poll_token').on(t.pollToken),
+  }),
+);
 
 // Authenticated influencer sessions. The session_id is the
 // unguessable credential held by the client. One active session
