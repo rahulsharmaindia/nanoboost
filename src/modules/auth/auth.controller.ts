@@ -187,6 +187,7 @@ export class AuthController {
         return res
           .status(200)
           .header('Content-Type', 'text/html')
+          .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
           .send(this.buildAutoClosePage('error', {
             message: errorDescription || 'Authorization denied',
             redirectUrl,
@@ -205,6 +206,7 @@ export class AuthController {
         return res
           .status(200)
           .header('Content-Type', 'text/html')
+          .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
           .send(this.buildAutoClosePage('error', {
             message: 'Session expired. Please try again.',
           }));
@@ -229,6 +231,7 @@ export class AuthController {
         return res
           .status(200)
           .header('Content-Type', 'text/html')
+          .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
           .send(this.buildAutoClosePage('error', {
             message: 'Authentication failed',
             redirectUrl,
@@ -244,9 +247,9 @@ export class AuthController {
 
     // Success!
     if (isWebPopup) {
-      // Try to auto-close the tab. The PWA's poll loop picks up the session.
-      // If window.close() fails (navigated-window case), fall back to
-      // redirecting with the session params so the bootstrap captures it.
+      // Serve the auto-close page with CSP relaxed for inline script.
+      // This is a transient server-generated page — not a user-facing
+      // app surface — so unsafe-inline is acceptable here.
       const redirectUrl = this.buildRedirectUrl(
         webUri,
         `status=authenticated&session_id=${result.sessionId}`,
@@ -254,6 +257,7 @@ export class AuthController {
       return res
         .status(200)
         .header('Content-Type', 'text/html')
+        .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
         .send(this.buildAutoClosePage('success', { redirectUrl }));
     }
 
