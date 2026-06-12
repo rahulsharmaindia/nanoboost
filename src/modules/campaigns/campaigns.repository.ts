@@ -200,6 +200,106 @@ export class CampaignsRepository {
   }
 
   /**
+   * Like listPublished but includes campaigns whose application deadline has
+   * passed. Also returns Completed campaigns so influencers can see finished
+   * campaigns. Used when the "show expired" toggle is on.
+   */
+  async listPublishedIncludingExpired(): Promise<CampaignRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(campaigns)
+      .where(
+        or(
+          eq(campaigns.status, 'Published'),
+          eq(campaigns.status, 'Active'),
+          eq(campaigns.status, 'Completed'),
+        ),
+      )
+      .orderBy(desc(campaigns.createdAt));
+    return rows.map((r: any) => this.mapDbCampaign(r));
+  }
+
+  /**
+   * Search all brands by name or industry for the influencer-side brand
+   * discovery feed.  Returns brands that have at least one Published or
+   * Active campaign so the list stays relevant, unless `includeAll` is set.
+   */
+  async searchBrands(params: {
+    query?: string;
+    industry?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: any[]; total: number }> {
+    const limit = Math.min(params.limit ?? 20, 50);
+    const offset = params.offset ?? 0;
+
+    // Build brand rows joined with campaign count.
+    const allBrands = await this.db
+      .select({
+        brandId: brands.brandId,
+        businessId: brands.businessId,
+        name: brands.name,
+        industry: brands.industry,
+        website: brands.website,
+        description: brands.description,
+      })
+      .from(brands)
+      .orderBy(brands.name);
+
+    // Filter in JS (small table, avoids complex Drizzle subquery).
+    let filtered = allBrands as any[];
+    if (params.query) {
+      const q = params.query.toLowerCase();
+      filtered = filtered.filter(
+        (b: any) =>
+          b.name.toLowerCase().includes(q) ||
+          (b.industry && b.industry.toLowerCase().includes(q)) ||
+          (b.description && b.description.toLowerCase().includes(q)),
+      );
+    }
+    if (params.industry) {
+      const ind = params.industry.toLowerCase();
+      filtered = filtered.filter(
+        (b: any) => b.industry && b.industry.toLowerCase().includes(ind),
+      );
+    }
+
+    const total = filtered.length;
+    const items = filtered.slice(offset, offset + limit);
+
+    // Enrich each brand with its active campaign count.
+    if (items.length > 0) {
+      const brandIds = items.map((b: any) => b.brandId);
+      const now = new Date().toISOString().split('T')[0];
+      const campaignRows = await this.db
+        .select({
+          brandId: campaigns.brandId,
+          status: campaigns.status,
+          deadline: campaigns.applicationDeadline,
+        })
+        .from(campaigns)
+        .where(
+          and(
+            inArray(campaigns.brandId, brandIds),
+            or(eq(campaigns.status, 'Published'), eq(campaigns.status, 'Active')),
+            gt(campaigns.applicationDeadline, now),
+          ),
+        );
+
+      const counts: Record<string, number> = {};
+      for (const row of campaignRows) {
+        counts[row.brandId] = (counts[row.brandId] ?? 0) + 1;
+      }
+
+      for (const b of items as any[]) {
+        b.activeCampaignCount = counts[b.brandId] ?? 0;
+      }
+    }
+
+    return { items, total };
+  }
+
+  /**
    * Look up brand display names for a set of brandIds in one query.
    * Returns a map keyed by brandId.
    */

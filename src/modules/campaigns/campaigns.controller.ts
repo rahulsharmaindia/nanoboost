@@ -126,8 +126,37 @@ export class CampaignsController {
 
   @UseGuards(AuthGuard)
   @Get('api/marketplace/campaigns')
-  listMarketplace(@Req() req: Request, @Query('niche') niche?: string, @Query('brand') brand?: string) {
-    return this.campaignsService.listMarketplace((req as any).sessionId, niche, brand);
+  listMarketplace(
+    @Req() req: Request,
+    @Query('niche') niche?: string,
+    @Query('brand') brand?: string,
+    @Query('search') search?: string,
+    @Query('includeExpired') includeExpired?: string,
+  ) {
+    return this.campaignsService.listMarketplace(
+      (req as any).sessionId,
+      niche,
+      brand,
+      search,
+      includeExpired === 'true' || includeExpired === '1',
+    );
+  }
+
+  // GET /api/marketplace/brands — influencer-side brand discovery
+  @UseGuards(AuthGuard)
+  @Get('api/marketplace/brands')
+  searchBrands(
+    @Query('query') query?: string,
+    @Query('industry') industry?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.campaignsService.searchBrands({
+      query,
+      industry,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+    });
   }
 
   @UseGuards(AuthGuard)

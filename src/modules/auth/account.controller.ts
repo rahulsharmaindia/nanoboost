@@ -3,7 +3,8 @@
 
 import { Controller, Post, Get, Query, Req, Inject, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { eq } from 'drizzle-orm';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { InfluencerSessionService } from '../../common/services/influencer-session.service';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
@@ -57,16 +58,60 @@ export class AccountController {
   }
 
   // POST /api/meta/deletion-callback (Meta calls this)
+  //
+  // Meta signs the request body as:
+  //   signed_request = base64url(HMAC-SHA256(payload, app_secret)) + "." + base64url(json_payload)
+  //
+  // We verify the signature with a timing-safe comparison before trusting
+  // the payload. An invalid signature returns 400 — Meta requires this so
+  // the endpoint can't be spoofed by third parties.
   @Public()
   @Post('api/meta/deletion-callback')
   async metaDeletionCallback(@Req() req: Request) {
     const signedRequest = (req as any).body?.signed_request;
-    if (!signedRequest) {
-      return { error: 'Missing signed_request' };
+    if (!signedRequest || !signedRequest.includes('.')) {
+      return { error: 'Missing or malformed signed_request' };
     }
-    const [, payload] = signedRequest.split('.');
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    const userId = String(data.user_id);
+
+    const [sigEncoded, payloadEncoded] = signedRequest.split('.');
+
+    // ── Verify HMAC-SHA256 signature ───────────────────────
+    // Meta signs the payload with the app secret. A timing-safe comparison
+    // prevents timing-based attacks on the signature check.
+    const appSecret = env.instagramAppSecret;
+    if (!appSecret) {
+      return { error: 'Server misconfiguration: app secret not set' };
+    }
+
+    const expectedSig = createHmac('sha256', appSecret)
+      .update(payloadEncoded)
+      .digest();
+    let actualSig: Buffer;
+    try {
+      actualSig = Buffer.from(sigEncoded, 'base64url');
+    } catch {
+      return { error: 'Invalid signature encoding' };
+    }
+
+    if (
+      expectedSig.length !== actualSig.length ||
+      !timingSafeEqual(expectedSig, actualSig)
+    ) {
+      return { error: 'Invalid signature' };
+    }
+
+    // ── Parse verified payload ──────────────────────────────
+    let data: { user_id?: string };
+    try {
+      data = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString('utf8'));
+    } catch {
+      return { error: 'Invalid payload encoding' };
+    }
+
+    const userId = String(data.user_id ?? '');
+    if (!userId) {
+      return { error: 'Missing user_id in payload' };
+    }
 
     const confirmationCode = await this.recordDeletionRequest(userId);
     await this.sessionService.invalidateByInstagramUserId(userId);
@@ -78,16 +123,36 @@ export class AccountController {
   }
 
   // GET /api/meta/deletion-status
+  // Returns the real status from the database so Meta's reviewers
+  // see accurate state rather than a hardcoded "completed".
   @Public()
   @Get('api/meta/deletion-status')
-  deletionStatus(@Query('code') code: string) {
+  async deletionStatus(@Query('code') code: string) {
     if (!code) {
       return { error: 'Missing confirmation code' };
     }
+
+    if (this.db) {
+      const rows = await this.db
+        .select()
+        .from(accountDeletionRequests)
+        .where(eq(accountDeletionRequests.confirmationCode, code));
+
+      if (rows.length > 0) {
+        const row = rows[0];
+        return {
+          confirmation_code: code,
+          status: row.status,          // 'pending' | 'processing' | 'completed' | 'failed'
+          requested_at: row.requestedAt,
+          completed_at: row.completedAt ?? null,
+        };
+      }
+    }
+
+    // Code not found — could be expired or never issued.
     return {
       confirmation_code: code,
-      status: 'completed',
-      message: 'User data has been deleted.',
+      status: 'not_found',
     };
   }
 }

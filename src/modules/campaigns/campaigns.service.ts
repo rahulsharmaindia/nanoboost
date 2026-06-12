@@ -312,8 +312,16 @@ export class CampaignsService {
 
   // ── Marketplace (Influencer side) ──────────────────────────
 
-  async listMarketplace(_sessionId: string, niche?: string, brand?: string) {
-    const published = await this.campaignsRepository.listPublished();
+  async listMarketplace(
+    _sessionId: string,
+    niche?: string,
+    brand?: string,
+    search?: string,
+    includeExpired?: boolean,
+  ) {
+    const published = includeExpired
+      ? await this.campaignsRepository.listPublishedIncludingExpired()
+      : await this.campaignsRepository.listPublished();
 
     const brandIds = published.map((c) => c.brandId);
     const brandInfo = await this.campaignsRepository.getBrandInfo(brandIds);
@@ -326,6 +334,10 @@ export class CampaignsService {
       brandName: brandInfo[campaign.brandId]?.name ?? 'Unknown Brand',
       businessId: brandInfo[campaign.brandId]?.businessId ?? null,
       approvedCount: approvedCounts[campaign.campaignId] ?? 0,
+      // Flag expired campaigns so the client can render them differently
+      isExpired:
+        campaign.applicationDeadline != null &&
+        campaign.applicationDeadline < new Date().toISOString().split('T')[0],
     }));
 
     let filtered = results;
@@ -344,7 +356,46 @@ export class CampaignsService {
       });
     }
 
-    return filtered;
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          (c.brandName || '').toLowerCase().includes(q) ||
+          ((c as any).description || '').toLowerCase().includes(q),
+      );
+    }
+
+    const statusOrder: Record<string, number> = {
+      Active: 0,
+      Published: 1,
+      Completed: 2,
+    };
+
+    return filtered.sort((a, b) => {
+      const aOrder = statusOrder[(a as any).status] ?? 99;
+      const bOrder = statusOrder[(b as any).status] ?? 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      // Within same status, newest first
+      return new Date((b as any).createdAt ?? 0).getTime() -
+        new Date((a as any).createdAt ?? 0).getTime();
+    });
+  }(params: {
+    query?: string;
+    industry?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = params.page ?? 1;
+    const limit = Math.min(params.limit ?? 20, 50);
+    const offset = (page - 1) * limit;
+    const { items, total } = await this.campaignsRepository.searchBrands({
+      query: params.query,
+      industry: params.industry,
+      limit,
+      offset,
+    });
+    return { items, total, page, hasMore: offset + items.length < total };
   }
 
   async applyToCampaign(sessionId: string, campaignId: string, accessToken: string) {
