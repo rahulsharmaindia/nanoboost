@@ -141,6 +141,8 @@ export class AuthController {
     @Query('platform') platform?: string,
     @Query('web_redirect_uri') webRedirectUri?: string,
   ) {
+    // Only pass a webUri for web clients. Mobile passes platform=mobile
+    // to signal it wants the iginsights:// deep-link callback instead.
     const webUri = platform === 'web' && webRedirectUri ? webRedirectUri : null;
     const { state, pollToken, authUrl } = await this.authService.startOAuth(webUri);
     return { state, poll_token: pollToken, auth_url: authUrl };
@@ -174,9 +176,9 @@ export class AuthController {
     const webUri = oauthState?.webRedirectUri ?? null;
 
     // Determine if this OAuth tab was opened as a popup/new-tab from the PWA.
-    // When webUri is set, the PWA is polling for completion and the tab
-    // should auto-close rather than redirect (which loads a duplicate app).
-    const isWebPopup = !!webUri;
+    // Only true for http/https URIs (web clients). Mobile passes iginsights://
+    // as the redirect URI and expects a direct redirect, not an auto-close page.
+    const isWebPopup = !!webUri && (webUri.startsWith('http://') || webUri.startsWith('https://'));
 
     if (error) {
       if (isWebPopup) {
