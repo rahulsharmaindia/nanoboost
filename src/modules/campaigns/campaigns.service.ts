@@ -380,7 +380,9 @@ export class CampaignsService {
       return new Date((b as any).createdAt ?? 0).getTime() -
         new Date((a as any).createdAt ?? 0).getTime();
     });
-  }(params: {
+  }
+
+  async searchBrands(params: {
     query?: string;
     industry?: string;
     page?: number;
