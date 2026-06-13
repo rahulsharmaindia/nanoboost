@@ -360,7 +360,7 @@ export class CampaignsService {
       const q = search.toLowerCase();
       filtered = filtered.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
+          ((c as any).title || '').toLowerCase().includes(q) ||
           (c.brandName || '').toLowerCase().includes(q) ||
           ((c as any).description || '').toLowerCase().includes(q),
       );
