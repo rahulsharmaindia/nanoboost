@@ -141,9 +141,10 @@ export class AuthController {
     @Query('platform') platform?: string,
     @Query('web_redirect_uri') webRedirectUri?: string,
   ) {
-    // Only pass a webUri for web clients. Mobile passes platform=mobile
-    // to signal it wants the iginsights:// deep-link callback instead.
-    const webUri = platform === 'web' && webRedirectUri ? webRedirectUri : null;
+    // Store the redirect URI for any platform that provides one.
+    // Web clients pass the PWA origin; mobile passes iginsights://auth.
+    // When absent, the callback uses WEB_FALLBACK_URI or iginsights://.
+    const webUri = webRedirectUri || null;
     const { state, pollToken, authUrl } = await this.authService.startOAuth(webUri);
     return { state, poll_token: pollToken, auth_url: authUrl };
   }
