@@ -185,14 +185,20 @@ export class CampaignsRepository {
   }
 
   async listPublished(): Promise<CampaignRecord[]> {
-    const now = new Date();
+    // Include campaigns with start_date in the last 3 months — regardless
+    // of whether the application deadline has passed — so recent campaigns
+    // always appear in the feed.
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const cutoff = threeMonthsAgo.toISOString().split('T')[0];
+
     const rows = await this.db
       .select()
       .from(campaigns)
       .where(
         and(
           or(eq(campaigns.status, 'Published'), eq(campaigns.status, 'Active')),
-          gt(campaigns.applicationDeadline, now.toISOString().split('T')[0]),
+          gt(campaigns.startDate, cutoff),
         ),
       )
       .orderBy(desc(campaigns.createdAt));
@@ -200,9 +206,8 @@ export class CampaignsRepository {
   }
 
   /**
-   * Like listPublished but includes campaigns whose application deadline has
-   * passed. Also returns Completed campaigns so influencers can see finished
-   * campaigns. Used when the "show expired" toggle is on.
+   * Like listPublished but also includes Completed campaigns and removes
+   * the 3-month cutoff. Used when the "show expired" toggle is on.
    */
   async listPublishedIncludingExpired(): Promise<CampaignRecord[]> {
     const rows = await this.db
