@@ -5,9 +5,9 @@ export class RegisterBrandDto {
   @IsNotEmpty()
   name: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  logo: string;
+  logo?: string;
 
   @IsString()
   @IsNotEmpty()
