@@ -102,7 +102,12 @@ export class CampaignsService {
   // ── Campaign CRUD ──────────────────────────────────────────
 
   async createCampaign(sessionId: string, data: Record<string, any>) {
-    this.validateCampaignData(data);
+    // Drafts can be saved incomplete; full validation runs when the
+    // campaign is published (createCampaign with a non-draft status, or
+    // a later Draft → Published status transition).
+    if (data.status !== 'Draft') {
+      this.validateCampaignData(data);
+    }
     const brandId = await this.requireBrandSession(sessionId);
     return this.campaignsRepository.createCampaign(brandId, data);
   }
@@ -143,7 +148,12 @@ export class CampaignsService {
       throw new CampaignNotEditableError();
     }
     const merged = { ...campaign, ...data };
-    this.validateCampaignData(merged);
+    // Skip the mandatory-field + cross-field checks while the campaign
+    // remains a draft. Publishing still validates (here when a non-draft
+    // payload is saved, and in updateStatus on the Draft → Published move).
+    if (merged.status !== 'Draft') {
+      this.validateCampaignData(merged);
+    }
     return (await this.campaignsRepository.updateCampaign(campaignId, data))!;
   }
 

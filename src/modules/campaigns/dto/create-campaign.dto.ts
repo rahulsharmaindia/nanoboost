@@ -17,26 +17,38 @@ import {
   IsString,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 const PAYMENT_MODELS = ['Fixed', 'Commission', 'Barter'] as const;
 const CAMPAIGN_TYPES = ['Promotion', 'UGC', 'Review', 'Giveaway'] as const;
 const GENDERS = ['Male', 'Female', 'All'] as const;
 
+/// Applied to every field that is mandatory for a real campaign but
+/// optional while the campaign is still a draft. When status === 'Draft'
+/// class-validator skips all other validators on the property, so a
+/// half-filled draft can be saved without tripping the required checks.
+const RequiredUnlessDraft = () =>
+  ValidateIf((o: CreateCampaignDto) => o.status !== 'Draft');
+
 export class CreateCampaignDto {
   // ── Basics ────────────────────────────────────────────────
+  @RequiredUnlessDraft()
   @IsString()
   @IsNotEmpty()
   title!: string;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsNotEmpty()
   description!: string;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsNotEmpty()
   objective!: string;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsIn(CAMPAIGN_TYPES as readonly string[])
   campaignType!: string;
@@ -80,22 +92,26 @@ export class CreateCampaignDto {
   referenceImages?: string[];
 
   // ── Audience ──────────────────────────────────────────────
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsInt()
   @Min(13)
   @Max(65)
   ageGroupMin!: number;
 
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsInt()
   @Min(13)
   @Max(65)
   ageGroupMax!: number;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsIn(GENDERS as readonly string[])
   gender!: string;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsNotEmpty()
   targetLocation!: string;
@@ -109,16 +125,19 @@ export class CreateCampaignDto {
   languagePreference?: string;
 
   // ── Budget ────────────────────────────────────────────────
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   totalBudget!: number;
 
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   budgetPerCreator!: number;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsIn(PAYMENT_MODELS as readonly string[])
   paymentModel!: string;
@@ -143,18 +162,23 @@ export class CreateCampaignDto {
   performanceIncentive?: string;
 
   // ── Timeline ──────────────────────────────────────────────
+  @RequiredUnlessDraft()
   @IsDateString()
   startDate!: string;
 
+  @RequiredUnlessDraft()
   @IsDateString()
   endDate!: string;
 
+  @RequiredUnlessDraft()
   @IsDateString()
   applicationDeadline!: string;
 
+  @RequiredUnlessDraft()
   @IsDateString()
   submissionDeadline!: string;
 
+  @RequiredUnlessDraft()
   @IsDateString()
   contentDeadline!: string;
 
@@ -175,17 +199,20 @@ export class CreateCampaignDto {
   postingTimeWindow?: string;
 
   // ── Creator requirements ──────────────────────────────────
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   minimumFollowers!: number;
 
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)
   requiredEngagementRate!: number;
 
+  @RequiredUnlessDraft()
   @IsString()
   @IsNotEmpty()
   preferredNiche!: string;
@@ -199,6 +226,7 @@ export class CreateCampaignDto {
   audienceGenderRatio?: string;
 
   // ── Slots ─────────────────────────────────────────────────
+  @RequiredUnlessDraft()
   @Type(() => Number)
   @IsInt()
   @Min(1)
