@@ -45,16 +45,18 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
-    // Increase body size limit to handle base64-encoded logo images
-    // sent during brand registration (default 100KB is too small).
-    bodyParser: true,
+    // Disable built-in body parser so our custom express.json with a
+    // higher limit takes effect. Without this, NestJS registers a
+    // default 100KB parser first and our 5MB middleware never fires
+    // because the body is already consumed.
+    bodyParser: false,
   });
 
-  // Raise the JSON body limit to 5 MB so that brand logo images
+  // Raise the JSON body limit to 10 MB so that brand logo images
   // (sent as base64 data URIs in the registration payload) are accepted
   // from all clients — web, Android, and iOS.
-  app.use(require('express').json({ limit: '5mb' }));
-  app.use(require('express').urlencoded({ extended: true, limit: '5mb' }));
+  app.use(require('express').json({ limit: '10mb' }));
+  app.use(require('express').urlencoded({ extended: true, limit: '10mb' }));
 
   // Security headers
   app.use(helmet());
