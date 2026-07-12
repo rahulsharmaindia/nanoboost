@@ -27,7 +27,7 @@ export interface InfluencerContext {
   sessionId: string;
   influencerId: string;
   instagramUserId: string;        // provider_user_id
-  accessToken: string | null;     // decrypted
+  accessToken: string | null;     // decrypted; null for non-Instagram auth providers
   tokenExpiresAt: Date | null;
   lastRefreshedAt: Date | null;
   sessionCreatedAt: Date;
@@ -37,6 +37,18 @@ export interface InfluencerContext {
   // start and keep the Google email available for onboarding pre-fill.
   profileCompletionStatus: 'incomplete' | 'complete';
   email: string | null;
+  /**
+   * The authentication provider used to establish this session.
+   * - 'instagram': legacy Instagram OAuth (accessToken is present)
+   * - 'google':    Google OAuth (accessToken is null; no Instagram social account)
+   * - 'password':  future email/password auth (accessToken is null)
+   *
+   * Use this instead of checking `accessToken !== null` — it makes intent
+   * explicit and will continue working as new providers are added.
+   */
+  authProvider: 'instagram' | 'google' | 'password';
+  /** True iff the influencer has a connected Instagram social account. */
+  hasInstagram: boolean;
 }
 
 export interface CompleteOAuthInput {
@@ -361,17 +373,30 @@ export class InfluencerSessionService {
       .from(influencers)
       .where(eq(influencers.influencerId, session.influencerId));
 
+    const hasInstagram = account !== null;
+    const decryptedToken = account ? this.cipher.decrypt(account.accessToken) : null;
+    // Derive authProvider from what we know about this session:
+    //   - has a connected Instagram social account → instagram
+    //   - has a google_user_id on the influencer row → google
+    //   - otherwise → password (future) or unknown, safe default
+    const authProvider: InfluencerContext['authProvider'] =
+      hasInstagram ? 'instagram'
+      : inf[0]?.googleUserId ? 'google'
+      : 'password';
+
     return {
       sessionId: session.sessionId,
       influencerId: session.influencerId,
       instagramUserId: account?.providerUserId ?? inf[0]?.instagramUserId ?? '',
-      accessToken: account ? this.cipher.decrypt(account.accessToken) : null,
+      accessToken: decryptedToken,
       tokenExpiresAt: this.toDate(account?.tokenExpiresAt),
       lastRefreshedAt: this.toDate(account?.lastRefreshedAt),
       sessionCreatedAt: this.toDate(session.createdAt) ?? new Date(),
       socialConnectedAt: this.toDate(account?.connectedAt),
       profileCompletionStatus: inf[0]?.profileCompletionStatus ?? 'incomplete',
       email: inf[0]?.email ?? null,
+      authProvider,
+      hasInstagram,
     };
   }
 

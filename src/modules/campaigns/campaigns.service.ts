@@ -49,12 +49,15 @@ export class CampaignsService {
 
   private async requireCreatorSession(sessionId: string): Promise<{
     influencerId: string;
-    accessToken: string;
+    accessToken: string | null;
   }> {
     const session = await this.influencerSessionService.getSession(sessionId);
-    if (!session || !session.accessToken) {
+    if (!session) {
       throw new UnauthorizedError('Not authenticated');
     }
+    // Google-only influencers have no Instagram access token — that's
+    // fine for campaign actions (apply, submit, browse). Only reject if
+    // there's no valid session at all.
     return {
       influencerId: session.influencerId,
       accessToken: session.accessToken,
@@ -410,7 +413,7 @@ export class CampaignsService {
     return { items, total, page, hasMore: offset + items.length < total };
   }
 
-  async applyToCampaign(sessionId: string, campaignId: string, accessToken: string) {
+  async applyToCampaign(sessionId: string, campaignId: string, accessToken: string | null) {
     const campaign = await this.campaignsRepository.getCampaign(campaignId);
     if (!campaign) throw new CampaignNotFoundError();
 
@@ -429,7 +432,19 @@ export class CampaignsService {
       throw new ValidationError('No available slots for this campaign');
     }
 
-    const { username, followerCount } = await this.metaService.getBasicProfile(accessToken);
+    // For Google-only influencers with no Instagram token, fall back to
+    // the data stored on the influencer row from onboarding.
+    let username: string | null = null;
+    let followerCount: number | null = null;
+    if (accessToken) {
+      const profile = await this.metaService.getBasicProfile(accessToken);
+      username = profile.username;
+      followerCount = profile.followerCount;
+    } else {
+      const session = await this.influencerSessionService.getSession(sessionId);
+      // Use instagram_handle set during onboarding as the username fallback.
+      username = (session as any)?.instagramHandle ?? null;
+    }
 
     return this.campaignsRepository.createApplication(campaignId, influencerId, {
       username,

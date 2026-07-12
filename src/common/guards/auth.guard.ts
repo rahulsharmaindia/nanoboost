@@ -45,7 +45,7 @@ export class AuthGuard implements CanActivate {
     // influencers have no Instagram social account / access token, so
     // only run the lazy IG long-lived token refresh when a token is
     // actually present; otherwise leave the access token null.
-    const accessToken = session.accessToken
+    const accessToken = session.hasInstagram && session.accessToken
       ? await this.metaTokenService.ensureFreshToken(session)
       : null;
 
@@ -53,6 +53,8 @@ export class AuthGuard implements CanActivate {
     request.sessionId = sessionId;
     request.influencerId = session.influencerId;
     request.providerUserId = session.instagramUserId;
+    request.hasInstagram = session.hasInstagram;
+    request.authProvider = session.authProvider;
     request.user = {
       sessionId,
       influencerId: session.influencerId,
