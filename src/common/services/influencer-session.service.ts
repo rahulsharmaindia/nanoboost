@@ -32,6 +32,11 @@ export interface InfluencerContext {
   lastRefreshedAt: Date | null;
   sessionCreatedAt: Date;
   socialConnectedAt: Date | null;
+  // Onboarding gating + pre-fill: surfaced on the auth-status response so
+  // the client can hard-lock a returning incomplete influencer on cold
+  // start and keep the Google email available for onboarding pre-fill.
+  profileCompletionStatus: 'incomplete' | 'complete';
+  email: string | null;
 }
 
 export interface CompleteOAuthInput {
@@ -184,6 +189,67 @@ export class InfluencerSessionService {
     return row.sessionId;
   }
 
+  // ── Google identity login (no Instagram social account) ────
+
+  // Resolves an influencer by google_user_id, or creates one. A
+  // first-time Google influencer starts `incomplete` with its email
+  // stored unverified. No Instagram social-account row is created —
+  // Google-first influencers supply their handle later during
+  // onboarding. Issues a fresh session (one active per influencer).
+  async loginWithGoogleIdentity(input: {
+    googleUserId: string;
+    email: string | null;
+  }): Promise<{ sessionId: string; profileCompletionStatus: 'incomplete' | 'complete' }> {
+    const db = this.requireDb();
+
+    // Resolve existing influencer by google_user_id, else create one
+    // with profile_completion_status defaulting to 'incomplete'.
+    const existing = await db
+      .select()
+      .from(influencers)
+      .where(eq(influencers.googleUserId, input.googleUserId));
+
+    let influencerId: string;
+    let status: 'incomplete' | 'complete';
+
+    if (existing.length > 0) {
+      influencerId = existing[0].influencerId;
+      status = existing[0].profileCompletionStatus;
+    } else {
+      const [row] = await db
+        .insert(influencers)
+        .values({
+          googleUserId: input.googleUserId,
+          email: input.email, // store the Google email
+          emailVerificationStatus: 'unverified', // default unverified
+          // profile_completion_status defaults to 'incomplete'
+          // contact_verification_status defaults to 'unverified'
+        })
+        .returning({
+          influencerId: influencers.influencerId,
+          profileCompletionStatus: influencers.profileCompletionStatus,
+        });
+      influencerId = row.influencerId;
+      status = row.profileCompletionStatus;
+    }
+
+    // Reuse the default subscription backfill from the Instagram path.
+    await this.ensureDefaultSubscription(influencerId);
+
+    // Replace any existing active session (one active session per influencer).
+    await db
+      .delete(influencerSessions)
+      .where(eq(influencerSessions.influencerId, influencerId));
+
+    const expiresAt = new Date(Date.now() + env.sessionTtlMs);
+    const [session] = await db
+      .insert(influencerSessions)
+      .values({ influencerId, status: 'authenticated', expiresAt })
+      .returning({ sessionId: influencerSessions.sessionId });
+
+    return { sessionId: session.sessionId, profileCompletionStatus: status };
+  }
+
   private async upsertInfluencer(
     instagramUserId: string,
     username?: string | null,
@@ -304,6 +370,8 @@ export class InfluencerSessionService {
       lastRefreshedAt: this.toDate(account?.lastRefreshedAt),
       sessionCreatedAt: this.toDate(session.createdAt) ?? new Date(),
       socialConnectedAt: this.toDate(account?.connectedAt),
+      profileCompletionStatus: inf[0]?.profileCompletionStatus ?? 'incomplete',
+      email: inf[0]?.email ?? null,
     };
   }
 

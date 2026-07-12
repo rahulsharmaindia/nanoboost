@@ -14,13 +14,22 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { sessionStatusEnum } from './enums.schema';
+import {
+  sessionStatusEnum,
+  profileCompletionStatusEnum,
+  verificationStatusEnum,
+} from './enums.schema';
 
 export const influencers = pgTable(
   'influencers',
   {
     influencerId: text('influencer_id').primaryKey().$defaultFn(() => randomUUID()),
-    instagramUserId: text('instagram_user_id').notNull().unique(),
+    // Google-first identity: influencers can exist before linking Instagram.
+    googleUserId: text('google_user_id'),
+    // Instagram user id is now an optional attribute (nullable), not a required key.
+    instagramUserId: text('instagram_user_id'),
+    // Instagram handle supplied during onboarding (free text).
+    instagramHandle: text('instagram_handle'),
     username: text('username'),
     displayName: text('display_name'),
     bio: text('bio'),
@@ -29,6 +38,20 @@ export const influencers = pgTable(
     followsCount: integer('follows_count').notNull().default(0),
     mediaCount: integer('media_count').notNull().default(0),
     niche: text('niche'),
+    // Mandatory profile-completion tracking for the onboarding hard-lock.
+    profileCompletionStatus: profileCompletionStatusEnum('profile_completion_status')
+      .notNull()
+      .default('incomplete'),
+    // Contact details captured from the Google identity / onboarding, with
+    // their (currently always unverified) verification state.
+    email: text('email'),
+    emailVerificationStatus: verificationStatusEnum('email_verification_status')
+      .notNull()
+      .default('unverified'),
+    contactNumber: text('contact_number'),
+    contactVerificationStatus: verificationStatusEnum('contact_verification_status')
+      .notNull()
+      .default('unverified'),
     instagramSyncedAt: timestamp('instagram_synced_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -36,6 +59,12 @@ export const influencers = pgTable(
   (t) => ({
     usernameIdx: index('idx_influencers_username').on(t.username),
     nicheIdx: index('idx_influencers_niche').on(t.niche),
+    googleUserIdx: index('idx_influencers_google_user').on(t.googleUserId),
+    // Uniqueness of instagram_user_id applies only to rows where it is set,
+    // so multiple Google-first influencers (null instagram_user_id) can coexist.
+    instagramUserIdUnique: uniqueIndex('uq_influencers_instagram_user_id')
+      .on(t.instagramUserId)
+      .where(sql`${t.instagramUserId} IS NOT NULL`),
   }),
 );
 

@@ -15,6 +15,13 @@
       "when": 1780852916838,
       "tag": "0001_oauth_poll_token",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783817745919,
+      "tag": "0002_google_auth_onboarding",
+      "breakpoints": true
     }
   ]
 }

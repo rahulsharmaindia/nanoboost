@@ -34,6 +34,15 @@ export const env = {
   instagramScopes: 'instagram_business_basic,instagram_business_manage_insights',
   instagramApiVersion: 'v25.0',
 
+  // Google OAuth
+  // GOOGLE_CLIENT_SECRET is server-side only and must never be
+  // exposed to the client. GOOGLE_REDIRECT_URI must exactly match
+  // the server callback registered in the Google Cloud Console.
+  googleClientId: getEnvOptional('GOOGLE_CLIENT_ID'),
+  googleClientSecret: getEnvOptional('GOOGLE_CLIENT_SECRET'),
+  googleRedirectUri: getEnvOptional('GOOGLE_REDIRECT_URI'),
+  googleScopes: getEnvOptional('GOOGLE_SCOPES', 'openid email profile'),
+
   // OAuth callback fallback for web/desktop browsers.
   //
   // When a session row has no `web_redirect_uri` (e.g. the start

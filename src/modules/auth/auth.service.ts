@@ -6,6 +6,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InfluencerSessionService } from '../../common/services/influencer-session.service';
 import { MetaService } from '../meta/meta.service';
+import { GoogleService } from '../google/google.service';
 import { env } from '../../config/env';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly sessionService: InfluencerSessionService,
     private readonly metaService: MetaService,
+    private readonly googleService: GoogleService,
   ) {}
 
   async startOAuth(
@@ -78,19 +80,77 @@ export class AuthService {
     }
   }
 
+  // ── Google OAuth (additive, parallel to the Instagram flow) ──
+  // Mirrors startOAuth/handleCallback on distinct Google paths. The
+  // token exchange is delegated to GoogleService; the state/poll
+  // plumbing is shared with the Instagram flow.
+  async startGoogleOAuth(
+    webRedirectUri?: string | null,
+  ): Promise<{ state: string; pollToken: string; authUrl: string }> {
+    const { state, pollToken } = await this.sessionService.createOAuthState(webRedirectUri);
+    const authUrl = this.googleService.buildAuthUrl(state);
+    this.logger.log(`Google OAuth state created: ${state}`);
+    return { state, pollToken, authUrl };
+  }
+
+  // Returns the issued session id on success, or null on failure.
+  async handleGoogleCallback(
+    code: string,
+    state: string,
+  ): Promise<{ status: string; sessionId: string | null }> {
+    const oauthState = await this.sessionService.getOAuthState(state);
+    if (!oauthState) {
+      // Req 2.3 — missing/unknown state: no session work.
+      return { status: 'error', sessionId: null };
+    }
+
+    try {
+      const { googleUserId, email } = await this.googleService.exchangeCodeForIdentity(code);
+
+      const { sessionId } = await this.sessionService.loginWithGoogleIdentity({
+        googleUserId,
+        email,
+      });
+
+      // Keep the handshake row so the poll fallback can deliver the
+      // session id to the client; it's consumed on poll or expiry.
+      await this.sessionService.attachSessionToState(state, sessionId);
+      this.logger.log(`Authenticated influencer (google user ${googleUserId})`);
+      return { status: 'authenticated', sessionId };
+    } catch (err) {
+      // Req 2.4 — code-exchange (or downstream) failure: mark errored, no session.
+      await this.sessionService.markStateError(state);
+      this.logger.error(`Google OAuth callback failed: ${(err as Error).message}`);
+      return { status: 'error', sessionId: null };
+    }
+  }
+
   // Poll fallback — exchange the private poll token for the session.
+  // Shared by both the Instagram and Google flows.
   async pollAuth(
     pollToken: string,
   ): Promise<{ status: string; sessionId?: string }> {
     return this.sessionService.pollByToken(pollToken);
   }
 
-  async getStatus(sessionId: string): Promise<{ status: string; userId: string | null }> {
+  async getStatus(sessionId: string): Promise<{
+    status: string;
+    userId: string | null;
+    profileCompletionStatus: 'incomplete' | 'complete' | null;
+    email: string | null;
+  }> {
     const session = await this.sessionService.getSession(sessionId);
     if (!session) {
-      return { status: 'not_found', userId: null };
+      return { status: 'not_found', userId: null, profileCompletionStatus: null, email: null };
     }
-    return { status: 'authenticated', userId: session.instagramUserId };
+    // Surface completion status + email so the client can gate a returning
+    // incomplete influencer on cold start (Req 4.1) and pre-fill onboarding.
+    return {
+      status: 'authenticated',
+      userId: session.instagramUserId,
+      profileCompletionStatus: session.profileCompletionStatus,
+      email: session.email,
+    };
   }
 
   async logout(sessionId: string): Promise<void> {

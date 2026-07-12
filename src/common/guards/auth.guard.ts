@@ -1,8 +1,9 @@
 // ── Influencer auth guard ────────────────────────────────────
 // Validates an influencer session token (Authorization header or
-// session_id query param). Looks up the session, ensures the
-// Instagram long-lived token is fresh, and attaches request
-// context for downstream handlers. @Public() routes bypass.
+// session_id query param). A valid session alone authorizes the
+// request — Google-only influencers have no Instagram token. When an
+// Instagram token is present it is lazily refreshed; the resulting
+// context is attached for downstream handlers. @Public() routes bypass.
 
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -36,12 +37,17 @@ export class AuthGuard implements CanActivate {
     }
 
     const session = await this.sessionService.getSession(sessionId);
-    if (!session || !session.accessToken) {
+    if (!session) {
       throw new UnauthorizedError('Not authenticated');
     }
 
-    // Lazily refresh the IG long-lived token if it's close to expiry.
-    const accessToken = await this.metaTokenService.ensureFreshToken(session);
+    // A valid session alone authorizes the request. Google-only
+    // influencers have no Instagram social account / access token, so
+    // only run the lazy IG long-lived token refresh when a token is
+    // actually present; otherwise leave the access token null.
+    const accessToken = session.accessToken
+      ? await this.metaTokenService.ensureFreshToken(session)
+      : null;
 
     request.accessToken = accessToken;
     request.sessionId = sessionId;

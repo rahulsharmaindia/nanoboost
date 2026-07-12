@@ -18,6 +18,7 @@ import { AuthGuard } from './common/guards/auth.guard';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { GoogleModule } from './modules/google/google.module';
 import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
@@ -35,6 +36,7 @@ import { BillingModule } from './modules/billing/billing.module';
     HealthModule,
     AuthModule,
     MetaModule,
+    GoogleModule,
     SocialAccountsModule,
     BrandsModule,
     CampaignsModule,

@@ -270,6 +270,118 @@ export class AuthController {
     );
   }
 
+  // ── Google OAuth (mirrors the Instagram flow on distinct paths) ──
+  // Self-managed, server-driven Google OAuth. The client never handles
+  // the authorization code or a provider token — the callback below is
+  // where authentication is established, so all three routes are public.
+
+  // GET /api/auth/google/start
+  @Public()
+  @Get('api/auth/google/start')
+  async startGoogleOAuth(
+    @Query('platform') platform?: string,
+    @Query('web_redirect_uri') webRedirectUri?: string,
+  ) {
+    // Store the redirect URI for any platform that provides one.
+    // Web clients pass the PWA origin; mobile passes iginsights://auth.
+    // When absent, the callback uses WEB_FALLBACK_URI or iginsights://.
+    const webUri = webRedirectUri || null;
+    const { state, pollToken, authUrl } =
+      await this.authService.startGoogleOAuth(webUri);
+    return { state, poll_token: pollToken, auth_url: authUrl };
+  }
+
+  // GET /api/auth/google/poll?poll_token=...
+  // Fallback for environments where the redirect-back is unreliable
+  // (e.g. iOS PWA standalone). The poll token is private to the client
+  // and never travels to Google. Single-use.
+  @Public()
+  @Get('api/auth/google/poll')
+  async pollGoogleAuth(@Query('poll_token') pollToken: string) {
+    if (!pollToken) {
+      return { status: 'not_found' };
+    }
+    const result = await this.authService.pollAuth(pollToken);
+    return { status: result.status, session_id: result.sessionId ?? null };
+  }
+
+  // GET /auth/google/callback  (Google redirects here)
+  @Public()
+  @Get('auth/google/callback')
+  async handleGoogleCallback(
+    @Query('code') rawCode: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Query('error_description') errorDescription: string,
+    @Res() res: Response,
+  ) {
+    const oauthState = state ? await this.sessionService.getOAuthState(state) : null;
+    const webUri = oauthState?.webRedirectUri ?? null;
+
+    // Determine if this OAuth tab was opened as a popup/new-tab from the PWA.
+    // Only true for http/https URIs (web clients). Mobile passes iginsights://
+    // as the redirect URI and expects a direct redirect, not an auto-close page.
+    const isWebPopup =
+      !!webUri && (webUri.startsWith('http://') || webUri.startsWith('https://'));
+
+    // Google returned an explicit error, or the state is missing/unknown
+    // (Req 2.3): return an auth error / redirect-back and issue no session.
+    if (error || !state || !oauthState) {
+      const reason = errorDescription || 'Session expired. Please try again.';
+      if (isWebPopup) {
+        return res
+          .status(200)
+          .header('Content-Type', 'text/html')
+          .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
+          .send(this.buildAutoClosePage('error', { message: reason }));
+      }
+      return res.redirect(
+        this.buildRedirectUrl(webUri, `status=error&reason=${encodeURIComponent(reason)}`),
+      );
+    }
+
+    const code = (rawCode || '').trim();
+    const result = await this.authService.handleGoogleCallback(code, state);
+
+    // Code-exchange failure (Req 2.4): no session issued.
+    if (result.status === 'error' || !result.sessionId) {
+      if (isWebPopup) {
+        const redirectUrl = this.buildRedirectUrl(
+          webUri,
+          `status=error&reason=${encodeURIComponent('Authentication failed')}`,
+        );
+        return res
+          .status(200)
+          .header('Content-Type', 'text/html')
+          .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
+          .send(this.buildAutoClosePage('error', {
+            message: 'Authentication failed',
+            redirectUrl,
+          }));
+      }
+      return res.redirect(
+        this.buildRedirectUrl(
+          webUri,
+          `status=error&reason=${encodeURIComponent('Authentication failed')}`,
+        ),
+      );
+    }
+
+    // Success — deliver the session id via auto-close page or redirect-back.
+    const redirectUrl = this.buildRedirectUrl(
+      webUri,
+      `status=authenticated&session_id=${result.sessionId}`,
+    );
+    if (isWebPopup) {
+      return res
+        .status(200)
+        .header('Content-Type', 'text/html')
+        .header('Content-Security-Policy', "script-src 'self' 'unsafe-inline'")
+        .send(this.buildAutoClosePage('success', { redirectUrl }));
+    }
+    return res.redirect(redirectUrl);
+  }
+
   // GET /api/auth/status
   @Public()
   @Get('api/auth/status')
@@ -277,8 +389,14 @@ export class AuthController {
     if (!sessionId) {
       return { status: 'not_found' };
     }
-    const { status, userId } = await this.authService.getStatus(sessionId);
-    return { status, user_id: userId };
+    const { status, userId, profileCompletionStatus, email } =
+      await this.authService.getStatus(sessionId);
+    return {
+      status,
+      user_id: userId,
+      profile_completion_status: profileCompletionStatus,
+      email,
+    };
   }
 
   // GET /api/auth/logout

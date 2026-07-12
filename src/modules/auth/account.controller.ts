@@ -1,16 +1,53 @@
 // ── Account management controller ────────────────────────────
 // Data deletion (Meta requirement) and Instagram disconnect.
 
-import { Controller, Post, Get, Query, Req, Inject, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Query, Req, Body, Inject, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { eq } from 'drizzle-orm';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { InfluencerSessionService } from '../../common/services/influencer-session.service';
 import { DRIZZLE_CLIENT } from '../../database/database.module';
 import { accountDeletionRequests } from '../../database/schema/account-deletion.schema';
+import { influencers } from '../../database/schema/influencers.schema';
 import { Public } from '../../common/decorators/public.decorator';
 import { env } from '../../config/env';
+
+// ── Onboarding profile-completion payload ────────────────────
+// Niche is mandatory FREE TEXT: NICHE_VALUES are only autocomplete
+// suggestions on the client, never an allow-list — so there is no
+// @IsIn constraint here. A non-empty string (predefined or custom)
+// is accepted.
+export class SubmitProfileDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  instagramHandle!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  niche!: string;
+
+  @IsInt()
+  @Min(0)
+  followerCount!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  contactNumber!: string;
+
+  @IsOptional()
+  @IsString()
+  displayName?: string;
+}
 
 @Controller()
 export class AccountController {
@@ -55,6 +92,40 @@ export class AccountController {
     const influencerId = (req as any).influencerId as string;
     await this.sessionService.disconnect(influencerId);
     return { status: 'disconnected' };
+  }
+
+  // POST /api/account/profile
+  //
+  // Persists the mandatory onboarding fields for the authenticated
+  // influencer and flips them out of the profile-completion hard-lock.
+  // The Instagram handle, niche, follower count, and contact number are
+  // required (validated on SubmitProfileDto); the display name is
+  // optional and only persisted when a non-empty value is supplied.
+  // Contact number is stamped `unverified` and the profile is marked
+  // `complete` in the same update.
+  @UseGuards(AuthGuard)
+  @Post('api/account/profile')
+  async submitProfile(@Req() req: Request, @Body() dto: SubmitProfileDto) {
+    const influencerId = (req as any).influencerId as string;
+
+    const trimmedDisplayName = dto.displayName?.trim();
+
+    await this.db
+      .update(influencers)
+      .set({
+        instagramHandle: dto.instagramHandle.trim(),
+        niche: dto.niche.trim(),
+        followerCount: dto.followerCount,
+        contactNumber: dto.contactNumber.trim(),
+        // Persist the display name only when a non-empty value was supplied.
+        ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
+        contactVerificationStatus: 'unverified',
+        profileCompletionStatus: 'complete',
+        updatedAt: new Date(),
+      })
+      .where(eq(influencers.influencerId, influencerId));
+
+    return { profile_completion_status: 'complete' };
   }
 
   // POST /api/meta/deletion-callback (Meta calls this)

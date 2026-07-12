@@ -22,6 +22,15 @@ export const deletionStatusEnum = pgEnum('deletion_status', [
   'completed',
   'failed',
 ]);
+// influencer onboarding: profile completion + shared verification state
+export const profileCompletionStatusEnum = pgEnum('profile_completion_status', [
+  'incomplete',
+  'complete',
+]);
+export const verificationStatusEnum = pgEnum('verification_status', [
+  'unverified',
+  'verified',
+]);
 
 // market
 export const campaignStatusEnum = pgEnum('campaign_status', [
