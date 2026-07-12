@@ -2,17 +2,55 @@
 // Fetches Instagram profile, media, and insights data.
 // On profile fetch, caches data in creator_profiles (best-effort).
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { MetaService } from '../meta/meta.service';
 import { CreatorProfileService } from './creator-profile.service';
+import { DRIZZLE_CLIENT } from '../../database/database.module';
+import { influencers } from '../../database/schema/influencers.schema';
 
 @Injectable()
 export class SocialAccountsService {
   constructor(
     private readonly metaService: MetaService,
     private readonly creatorProfileService: CreatorProfileService,
+    @Inject(DRIZZLE_CLIENT) @Optional() private readonly db: any,
   ) {}
 
+  /**
+   * Returns a minimal profile built from the influencer row — used for
+   * Google-only influencers who have no Instagram access token. The shape
+   * matches `InstagramProfile.fromJson` on the client so the profile screen
+   * renders without modification.
+   */
+  async getProfileFromDb(influencerId: string): Promise<Record<string, unknown>> {
+    if (!this.db) {
+      return { id: influencerId, name: '', username: null, followers_count: 0, follows_count: 0, media_count: 0 };
+    }
+    const rows = await this.db
+      .select()
+      .from(influencers)
+      .where(eq(influencers.influencerId, influencerId));
+    if (rows.length === 0) {
+      return { id: influencerId, name: '', username: null, followers_count: 0, follows_count: 0, media_count: 0 };
+    }
+    const inf = rows[0];
+    return {
+      id: inf.influencerId,
+      name: inf.displayName || inf.username || inf.instagramHandle || '',
+      username: inf.instagramHandle || inf.username || null,
+      profile_picture_url: inf.profilePictureUrl || null,
+      followers_count: inf.followerCount ?? 0,
+      follows_count: inf.followsCount ?? 0,
+      media_count: inf.mediaCount ?? 0,
+      biography: inf.bio || null,
+      display_name: inf.displayName || null,
+      email: inf.email || null,
+      contact_number: inf.contactNumber || null,
+      email_verification_status: inf.emailVerificationStatus || 'unverified',
+      contact_verification_status: inf.contactVerificationStatus || 'unverified',
+    };
+  }
   async getProfile(accessToken: string, influencerId?: string) {
     const data = await this.metaService.getUserProfile(accessToken);
 
