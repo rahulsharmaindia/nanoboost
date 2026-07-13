@@ -171,6 +171,40 @@ export class CampaignsService {
     return (await this.campaignsRepository.updateCampaign(campaignId, data))!;
   }
 
+  /**
+   * Creates a copy of an existing campaign as a new Draft.
+   * All campaign fields are copied; status is reset to 'Draft',
+   * the title is prefixed with "Copy of ", and the new campaign
+   * starts with no applications or submissions.
+   * Usable both from the detail screen (explicit "Duplicate" button) and
+   * from the wizard when saving a Published/Active campaign as a new draft.
+   */
+  async duplicateCampaign(sessionId: string, campaignId: string): Promise<any> {
+    const brandId = await this.requireBrandSession(sessionId);
+    const source = await this.campaignsRepository.getCampaign(campaignId);
+    if (!source || source.brandId !== brandId) {
+      throw new CampaignNotFoundError();
+    }
+
+    // Strip server-managed fields; reset lifecycle fields.
+    const {
+      campaignId: _id,
+      brandId: _brandId,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      status: _status,
+      ...rest
+    } = source as any;
+
+    const draftData = {
+      ...rest,
+      status: 'Draft',
+      title: `Copy of ${source.title ?? 'Campaign'}`,
+    };
+
+    return this.campaignsRepository.createCampaign(brandId, draftData);
+  }
+
   async updateStatus(sessionId: string, campaignId: string, newStatus: string) {
     const brandId = await this.requireBrandSession(sessionId);
     const campaign = await this.campaignsRepository.getCampaign(campaignId);

@@ -56,6 +56,18 @@ export class CampaignsController {
   }
 
   @UseGuards(BrandAuthGuard)
+  @Post('api/campaigns/:campaignId/duplicate')
+  duplicateCampaign(
+    @Req() req: Request,
+    @Param('campaignId') campaignId: string,
+  ) {
+    return this.campaignsService.duplicateCampaign(
+      (req as any).sessionId,
+      campaignId,
+    );
+  }
+
+  @UseGuards(BrandAuthGuard)
   @Patch('api/campaigns/:campaignId/status')
   updateStatus(
     @Req() req: Request,
