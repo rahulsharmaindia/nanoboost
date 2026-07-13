@@ -272,17 +272,26 @@ export class InfluencerSessionService {
       .from(influencers)
       .where(eq(influencers.instagramUserId, instagramUserId));
     if (existing.length > 0) {
-      if (username) {
-        await db
-          .update(influencers)
-          .set({ username, updatedAt: new Date() })
-          .where(eq(influencers.influencerId, existing[0].influencerId));
-      }
+      // Instagram-authenticated influencers always have a complete profile
+      // (they don't go through the onboarding flow). Ensure the status is
+      // set correctly even for rows that were created before the column was
+      // added or that defaulted to 'incomplete'.
+      const updates: Record<string, any> = {
+        profileCompletionStatus: 'complete',
+        updatedAt: new Date(),
+      };
+      if (username) updates.username = username;
+      await db
+        .update(influencers)
+        .set(updates)
+        .where(eq(influencers.influencerId, existing[0].influencerId));
       return existing[0].influencerId;
     }
     const [row] = await db
       .insert(influencers)
-      .values({ instagramUserId, username: username ?? null })
+      // Instagram OAuth users have completed "onboarding" implicitly via their
+      // Instagram profile — no separate onboarding flow is required.
+      .values({ instagramUserId, username: username ?? null, profileCompletionStatus: 'complete' })
       .returning({ influencerId: influencers.influencerId });
     return row.influencerId;
   }
