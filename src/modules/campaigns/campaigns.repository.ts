@@ -399,50 +399,6 @@ export class CampaignsRepository {
   }
 
   /**
-   * Returns the number of Active/Published campaigns for a brand and the
-   * number of Pending applications across those campaigns.
-   * Uses at most 2 queries — no N+1.
-   */
-  async getBrandStats(brandId: string): Promise<{ activeCampaignCount: number; pendingApplicationsCount: number }> {
-    // Query 1: count Active + Published campaigns and collect their IDs.
-    const campaignRows = await this.db
-      .select({
-        campaignId: campaigns.campaignId,
-      })
-      .from(campaigns)
-      .where(
-        and(
-          eq(campaigns.brandId, brandId),
-          or(eq(campaigns.status, 'Active'), eq(campaigns.status, 'Published')),
-        ),
-      );
-
-    const activeCampaignCount = campaignRows.length;
-
-    if (activeCampaignCount === 0) {
-      return { activeCampaignCount: 0, pendingApplicationsCount: 0 };
-    }
-
-    // Query 2: count Pending applications for those campaign IDs.
-    const campaignIds = campaignRows.map((r: any) => r.campaignId);
-    const pendingRows = await this.db
-      .select({
-        count: sql<number>`count(*)::int`,
-      })
-      .from(applications)
-      .where(
-        and(
-          inArray(applications.campaignId, campaignIds),
-          eq(applications.status, 'Pending'),
-        ),
-      );
-
-    const pendingApplicationsCount = Number(pendingRows[0]?.count ?? 0);
-
-    return { activeCampaignCount, pendingApplicationsCount };
-  }
-
-  /**
    * Returns a map of campaignId → approved-application count for the
    * given campaign IDs. Single grouped query — replaces the N+1 pattern
    * of calling `listApplicationsByCampaign` per campaign in lists.

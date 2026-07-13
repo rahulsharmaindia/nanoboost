@@ -43,12 +43,6 @@ export class CampaignsController {
   }
 
   @UseGuards(BrandAuthGuard)
-  @Get('api/campaigns/stats')
-  getBrandStats(@Req() req: Request) {
-    return this.campaignsService.getBrandStats((req as any).sessionId);
-  }
-
-  @UseGuards(BrandAuthGuard)
   @Get('api/campaigns/:campaignId')
   getCampaign(@Req() req: Request, @Param('campaignId') campaignId: string) {
     return this.campaignsService.getCampaign((req as any).sessionId, campaignId);

@@ -104,11 +104,6 @@ export class CampaignsService {
 
   // ── Campaign CRUD ──────────────────────────────────────────
 
-  async getBrandStats(sessionId: string): Promise<{ activeCampaignCount: number; pendingApplicationsCount: number }> {
-    const brandId = await this.requireBrandSession(sessionId);
-    return this.campaignsRepository.getBrandStats(brandId);
-  }
-
   async createCampaign(sessionId: string, data: Record<string, any>) {
     // Drafts can be saved incomplete; full validation runs when the
     // campaign is published (createCampaign with a non-draft status, or
