@@ -104,6 +104,11 @@ export class CampaignsService {
 
   // ── Campaign CRUD ──────────────────────────────────────────
 
+  async getBrandStats(sessionId: string): Promise<{ activeCampaignCount: number; pendingApplicationsCount: number }> {
+    const brandId = await this.requireBrandSession(sessionId);
+    return this.campaignsRepository.getBrandStats(brandId);
+  }
+
   async createCampaign(sessionId: string, data: Record<string, any>) {
     // Drafts can be saved incomplete; full validation runs when the
     // campaign is published (createCampaign with a non-draft status, or
@@ -203,6 +208,30 @@ export class CampaignsService {
     };
 
     return this.campaignsRepository.createCampaign(brandId, draftData);
+  }
+
+  /**
+   * Permanently deletes an Archived campaign.
+   * Only allowed once the campaign has been in Archived state for at least
+   * 7 days (measured by updatedAt, which is stamped when status changes).
+   */
+  async deleteCampaign(sessionId: string, campaignId: string): Promise<void> {
+    const brandId = await this.requireBrandSession(sessionId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
+    if (!campaign || campaign.brandId !== brandId) {
+      throw new CampaignNotFoundError();
+    }
+    if (campaign.status !== 'Archived') {
+      throw new CampaignValidationError('Only Archived campaigns can be deleted');
+    }
+    const archivedMs = Date.now() - new Date(campaign.updatedAt).getTime();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    if (archivedMs < sevenDaysMs) {
+      throw new CampaignValidationError(
+        'Campaign can only be deleted after it has been archived for at least 7 days',
+      );
+    }
+    await this.campaignsRepository.deleteCampaign(campaignId);
   }
 
   async updateStatus(sessionId: string, campaignId: string, newStatus: string) {

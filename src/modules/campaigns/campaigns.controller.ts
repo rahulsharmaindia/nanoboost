@@ -8,11 +8,14 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
   Req,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { CampaignsService } from './campaigns.service';
@@ -37,6 +40,12 @@ export class CampaignsController {
   @Get('api/campaigns')
   listCampaigns(@Req() req: Request) {
     return this.campaignsService.listCampaigns((req as any).sessionId);
+  }
+
+  @UseGuards(BrandAuthGuard)
+  @Get('api/campaigns/stats')
+  getBrandStats(@Req() req: Request) {
+    return this.campaignsService.getBrandStats((req as any).sessionId);
   }
 
   @UseGuards(BrandAuthGuard)
@@ -65,6 +74,16 @@ export class CampaignsController {
       (req as any).sessionId,
       campaignId,
     );
+  }
+
+  @UseGuards(BrandAuthGuard)
+  @Delete('api/campaigns/:campaignId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteCampaign(
+    @Req() req: Request,
+    @Param('campaignId') campaignId: string,
+  ) {
+    await this.campaignsService.deleteCampaign((req as any).sessionId, campaignId);
   }
 
   @UseGuards(BrandAuthGuard)
