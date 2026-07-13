@@ -145,10 +145,21 @@ export class CampaignsService {
     if (!campaign || campaign.brandId !== brandId) {
       throw new CampaignNotFoundError();
     }
-    // Editing is blocked only for terminal lifecycle states.
+    // Terminal states cannot be edited at all.
     const terminalStates = ['Completed', 'Cancelled', 'Archived'];
     if (terminalStates.includes(campaign.status)) {
       throw new CampaignNotEditableError();
+    }
+    // Prevent backward status transitions.
+    // A Published/Active/Completed/Cancelled/Archived campaign cannot be
+    // saved back to Draft via a direct update — the client must create a
+    // new draft instead (handled client-side by the confirmation dialog).
+    const nonDraftStates = ['Published', 'Active', 'Completed', 'Cancelled', 'Archived'];
+    if (nonDraftStates.includes(campaign.status) && data.status === 'Draft') {
+      throw new CampaignValidationError(
+        `Cannot move a ${campaign.status} campaign back to Draft. ` +
+        'Create a new draft from the wizard instead.',
+      );
     }
     const merged = { ...campaign, ...data };
     // Skip the mandatory-field + cross-field checks while the campaign
