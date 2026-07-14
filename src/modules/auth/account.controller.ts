@@ -1,7 +1,7 @@
 // ── Account management controller ────────────────────────────
 // Data deletion (Meta requirement) and Instagram disconnect.
 
-import { Controller, Post, Get, Query, Req, Body, Inject, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Query, Req, Body, Inject, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { eq } from 'drizzle-orm';
@@ -51,6 +51,38 @@ export class SubmitProfileDto {
   @IsString()
   @IsNotEmpty()
   profilePictureDataUri!: string;
+}
+
+// ── Update profile payload ────────────────────────────────────
+// All fields are optional so callers only send what changed.
+export class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  instagramHandle?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  niche?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  followerCount?: number;
+
+  @IsOptional()
+  @IsString()
+  contactNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  profilePictureDataUri?: string;
 }
 
 @Controller()
@@ -132,6 +164,47 @@ export class AccountController {
       .where(eq(influencers.influencerId, influencerId));
 
     return { profile_completion_status: 'complete' };
+  }
+
+  // PATCH /api/account/profile
+  //
+  // Updates mutable profile fields for the authenticated influencer.
+  // Every field is optional — only the supplied fields are written.
+  // profilePictureDataUri replaces the stored picture when provided.
+  @UseGuards(AuthGuard)
+  @Patch('api/account/profile')
+  async updateProfile(@Req() req: Request, @Body() dto: UpdateProfileDto) {
+    const influencerId = (req as any).influencerId as string;
+
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (dto.instagramHandle !== undefined) {
+      update.instagramHandle = dto.instagramHandle.trim();
+    }
+    if (dto.niche !== undefined) {
+      update.niche = dto.niche.trim();
+    }
+    if (dto.followerCount !== undefined) {
+      update.followerCount = dto.followerCount;
+    }
+    if (dto.contactNumber !== undefined) {
+      const trimmed = dto.contactNumber.trim();
+      update.contactNumber = trimmed.length > 0 ? trimmed : null;
+    }
+    if (dto.displayName !== undefined) {
+      const trimmed = dto.displayName.trim();
+      update.displayName = trimmed.length > 0 ? trimmed : null;
+    }
+    if (dto.profilePictureDataUri !== undefined) {
+      update.profilePictureUrl = dto.profilePictureDataUri;
+    }
+
+    await this.db
+      .update(influencers)
+      .set(update)
+      .where(eq(influencers.influencerId, influencerId));
+
+    return { status: 'updated' };
   }
 
   // POST /api/meta/deletion-callback (Meta calls this)
