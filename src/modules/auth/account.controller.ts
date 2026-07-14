@@ -47,6 +47,10 @@ export class SubmitProfileDto {
   @IsOptional()
   @IsString()
   displayName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  profilePictureDataUri!: string;
 }
 
 @Controller()
@@ -119,6 +123,8 @@ export class AccountController {
         contactNumber: dto.contactNumber.trim(),
         // Persist the display name only when a non-empty value was supplied.
         ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
+        // Profile picture is mandatory — always persisted.
+        profilePictureUrl: dto.profilePictureDataUri,
         contactVerificationStatus: 'unverified',
         profileCompletionStatus: 'complete',
         updatedAt: new Date(),
