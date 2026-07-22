@@ -38,6 +38,12 @@ export const campaigns = pgTable(
     mentions: text('mentions'),
     handleToTag: text('handle_to_tag'),
     referenceImages: text('reference_images'),
+    // Single URL to a reference/brief video (e.g. YouTube, Drive link).
+    referenceVideoUrl: text('reference_video_url'),
+    // JSON array of additional reference link URLs (briefs, mood boards,
+    // etc). Shown to influencers as "Resources" only once their
+    // application to the campaign is approved.
+    additionalReferenceLinks: text('additional_reference_links'),
 
     // Target audience
     ageGroupMin: integer('age_group_min').notNull(),

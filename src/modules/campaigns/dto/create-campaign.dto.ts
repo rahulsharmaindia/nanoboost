@@ -91,6 +91,14 @@ export class CreateCampaignDto {
   @IsArray()
   referenceImages?: string[];
 
+  @IsOptional()
+  @IsString()
+  referenceVideoUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  additionalReferenceLinks?: string[];
+
   // ── Audience ──────────────────────────────────────────────
   @RequiredUnlessDraft()
   @Type(() => Number)

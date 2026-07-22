@@ -83,6 +83,10 @@ export class CampaignsRepository {
       mentions: data.mentions ? JSON.stringify(data.mentions) : null,
       handleToTag: data.handleToTag ?? null,
       referenceImages: data.referenceImages ? JSON.stringify(data.referenceImages) : null,
+      referenceVideoUrl: data.referenceVideoUrl ?? null,
+      additionalReferenceLinks: data.additionalReferenceLinks
+        ? JSON.stringify(data.additionalReferenceLinks)
+        : null,
       ageGroupMin: data.ageGroupMin ?? 0,
       ageGroupMax: data.ageGroupMax ?? 0,
       gender: data.gender ?? '',
@@ -145,7 +149,7 @@ export class CampaignsRepository {
     // Simple scalar fields
     const scalarFields = [
       'status', 'title', 'description', 'objective', 'campaignType', 'platform',
-      'contentCountPerInfluencer', 'captionGuidelines', 'handleToTag',
+      'contentCountPerInfluencer', 'captionGuidelines', 'handleToTag', 'referenceVideoUrl',
       'ageGroupMin', 'ageGroupMax', 'gender', 'targetLocation',
       'languagePreference', 'paymentModel', 'productDetails', 'bonusCriteria',
       'performanceIncentive', 'startDate', 'endDate', 'applicationDeadline',
@@ -176,6 +180,7 @@ export class CampaignsRepository {
     const jsonFields = [
       'postTypes', 'deliverables', 'hashtags', 'mentions',
       'referenceImages', 'interests', 'priorityInviteList',
+      'additionalReferenceLinks',
     ];
     for (const field of jsonFields) {
       if (data[field] !== undefined) {
@@ -528,6 +533,8 @@ export class CampaignsRepository {
       mentions: this.safeJsonParse(row.mentions),
       handleToTag: row.handleToTag,
       referenceImages: this.safeJsonParse(row.referenceImages),
+      referenceVideoUrl: row.referenceVideoUrl,
+      additionalReferenceLinks: this.safeJsonParse(row.additionalReferenceLinks),
       ageGroupMin: row.ageGroupMin,
       ageGroupMax: row.ageGroupMax,
       gender: row.gender,

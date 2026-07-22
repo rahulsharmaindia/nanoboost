@@ -38,6 +38,8 @@ export class UpdateCampaignDto {
   @IsOptional() @IsArray() mentions?: string[];
   @IsOptional() @IsString() handleToTag?: string;
   @IsOptional() @IsArray() referenceImages?: string[];
+  @IsOptional() @IsString() referenceVideoUrl?: string;
+  @IsOptional() @IsArray() additionalReferenceLinks?: string[];
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(13) @Max(65) ageGroupMin?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(13) @Max(65) ageGroupMax?: number;
