@@ -49,8 +49,35 @@ export class SocialAccountsService {
       contact_number: inf.contactNumber || null,
       email_verification_status: inf.emailVerificationStatus || 'unverified',
       contact_verification_status: inf.contactVerificationStatus || 'unverified',
+      price_per_reel: inf.pricePerReel ?? null,
+      price_per_post: inf.pricePerPost ?? null,
+      price_per_story: inf.pricePerStory ?? null,
+      price_ad_rights_15_days: inf.priceAdRights15Days ?? null,
     };
   }
+
+  /**
+   * Reads the creator rate card (price fields) off the influencers row.
+   * Merged into the Instagram-profile response so the edit screen can
+   * prefill these fields even for Instagram-connected influencers (whose
+   * base profile otherwise comes straight from the Meta API).
+   */
+  private async getRateCard(influencerId: string): Promise<Record<string, number | null>> {
+    if (!this.db) return {};
+    const rows = await this.db
+      .select()
+      .from(influencers)
+      .where(eq(influencers.influencerId, influencerId));
+    if (rows.length === 0) return {};
+    const inf = rows[0];
+    return {
+      price_per_reel: inf.pricePerReel ?? null,
+      price_per_post: inf.pricePerPost ?? null,
+      price_per_story: inf.pricePerStory ?? null,
+      price_ad_rights_15_days: inf.priceAdRights15Days ?? null,
+    };
+  }
+
   async getProfile(accessToken: string, influencerId?: string) {
     const data = await this.metaService.getUserProfile(accessToken);
 
@@ -68,6 +95,11 @@ export class SocialAccountsService {
           mediaCount: data.media_count,
         })
         .catch(() => {}); // fire-and-forget
+
+      // Merge the rate card from our own DB — the Meta API doesn't know
+      // about these fields, so the edit screen needs them from here.
+      const rateCard = await this.getRateCard(influencerId);
+      return { ...data, ...rateCard };
     }
 
     return data;

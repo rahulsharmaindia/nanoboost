@@ -133,6 +133,28 @@ export class AuthService {
     return this.sessionService.pollByToken(pollToken);
   }
 
+  // ── Magic-link invite redemption ───────────────────────────
+  // Exchanges a single-use invite token for an influencer session.
+  // Returns { status: 'authenticated', sessionId, profileCompletionStatus }
+  // on success, or { status: 'error' } when the token is invalid,
+  // already used, or expired.
+  async redeemInvite(token: string): Promise<{
+    status: string;
+    sessionId: string | null;
+    profileCompletionStatus: 'incomplete' | 'complete' | null;
+  }> {
+    const result = await this.sessionService.redeemInviteToken(token);
+    if (!result) {
+      return { status: 'error', sessionId: null, profileCompletionStatus: null };
+    }
+    this.logger.log('Influencer authenticated via invite token');
+    return {
+      status: 'authenticated',
+      sessionId: result.sessionId,
+      profileCompletionStatus: result.profileCompletionStatus,
+    };
+  }
+
   async getStatus(sessionId: string): Promise<{
     status: string;
     userId: string | null;

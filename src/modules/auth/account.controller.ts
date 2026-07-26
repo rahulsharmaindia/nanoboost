@@ -44,6 +44,23 @@ export class SubmitProfileDto {
   @IsNotEmpty()
   contactNumber!: string;
 
+  // ── Creator rate card (mandatory, whole currency units) ──────
+  @IsInt()
+  @Min(0)
+  pricePerReel!: number;
+
+  @IsInt()
+  @Min(0)
+  pricePerPost!: number;
+
+  @IsInt()
+  @Min(0)
+  pricePerStory!: number;
+
+  @IsInt()
+  @Min(0)
+  priceAdRights15Days!: number;
+
   @IsOptional()
   @IsString()
   displayName?: string;
@@ -75,6 +92,26 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   contactNumber?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pricePerReel?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pricePerPost?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pricePerStory?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  priceAdRights15Days?: number;
 
   @IsOptional()
   @IsString()
@@ -153,6 +190,10 @@ export class AccountController {
         niche: dto.niche.trim(),
         followerCount: dto.followerCount,
         contactNumber: dto.contactNumber.trim(),
+        pricePerReel: dto.pricePerReel,
+        pricePerPost: dto.pricePerPost,
+        pricePerStory: dto.pricePerStory,
+        priceAdRights15Days: dto.priceAdRights15Days,
         // Persist the display name only when a non-empty value was supplied.
         ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
         // Profile picture is mandatory — always persisted.
@@ -190,6 +231,18 @@ export class AccountController {
     if (dto.contactNumber !== undefined) {
       const trimmed = dto.contactNumber.trim();
       update.contactNumber = trimmed.length > 0 ? trimmed : null;
+    }
+    if (dto.pricePerReel !== undefined) {
+      update.pricePerReel = dto.pricePerReel;
+    }
+    if (dto.pricePerPost !== undefined) {
+      update.pricePerPost = dto.pricePerPost;
+    }
+    if (dto.pricePerStory !== undefined) {
+      update.pricePerStory = dto.pricePerStory;
+    }
+    if (dto.priceAdRights15Days !== undefined) {
+      update.priceAdRights15Days = dto.priceAdRights15Days;
     }
     if (dto.displayName !== undefined) {
       const trimmed = dto.displayName.trim();

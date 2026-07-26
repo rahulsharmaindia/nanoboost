@@ -399,6 +399,26 @@ export class AuthController {
     };
   }
 
+  // GET /api/auth/invite?token=...
+  //
+  // Magic-link redemption for bulk-imported influencers. Exchanges a
+  // single-use invite token for a session id. Public — the possession
+  // of the token IS the authentication (same model as a password-reset
+  // link). Returns { status, session_id, profile_completion_status }.
+  @Public()
+  @Get('api/auth/invite')
+  async redeemInvite(@Query('token') token: string) {
+    if (!token) {
+      return { status: 'error', session_id: null, profile_completion_status: null };
+    }
+    const result = await this.authService.redeemInvite(token);
+    return {
+      status: result.status,
+      session_id: result.sessionId,
+      profile_completion_status: result.profileCompletionStatus,
+    };
+  }
+
   // GET /api/auth/logout
   @Public()
   @Get('api/auth/logout')

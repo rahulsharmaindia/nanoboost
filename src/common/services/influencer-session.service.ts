@@ -17,6 +17,7 @@ import {
   influencerSessions,
   influencerSocialAccounts,
   influencerOauthStates,
+  influencerInviteTokens,
 } from '../../database/schema/influencers.schema';
 import { env } from '../../config/env';
 import { TokenCipher } from './token-cipher.service';
@@ -260,6 +261,73 @@ export class InfluencerSessionService {
       .returning({ sessionId: influencerSessions.sessionId });
 
     return { sessionId: session.sessionId, profileCompletionStatus: status };
+  }
+
+  // ── Magic-link invite redemption ───────────────────────────
+  //
+  // Redeems a single-use invite token minted for a bulk-imported
+  // influencer. On success, issues a fresh session for that influencer
+  // (replacing any prior active one, matching the OAuth flows) and marks
+  // the token consumed. Returns null when the token is unknown, already
+  // used, or expired — the caller surfaces this as an auth failure.
+  async redeemInviteToken(token: string): Promise<{
+    sessionId: string;
+    profileCompletionStatus: 'incomplete' | 'complete';
+  } | null> {
+    if (!token) return null;
+    const db = this.requireDb();
+
+    const rows = await db
+      .select()
+      .from(influencerInviteTokens)
+      .where(eq(influencerInviteTokens.token, token));
+    if (rows.length === 0) return null;
+
+    const invite = rows[0];
+
+    // Single-use: reject an already-consumed token.
+    if (invite.usedAt != null) return null;
+
+    // Reject an expired token.
+    const expiresAt = this.toDate(invite.expiresAt);
+    if (!expiresAt || expiresAt.getTime() < Date.now()) return null;
+
+    // Ensure the linked influencer still exists.
+    const inf = await db
+      .select()
+      .from(influencers)
+      .where(eq(influencers.influencerId, invite.influencerId));
+    if (inf.length === 0) return null;
+
+    // Mark the token consumed BEFORE issuing the session so a race
+    // (double-tap on the link) can't mint two sessions from one token.
+    await db
+      .update(influencerInviteTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(influencerInviteTokens.token, token));
+
+    // Backfill a default subscription, matching the OAuth login paths.
+    await this.ensureDefaultSubscription(invite.influencerId);
+
+    // Replace any existing active session (one active per influencer).
+    await db
+      .delete(influencerSessions)
+      .where(eq(influencerSessions.influencerId, invite.influencerId));
+
+    const expiresAtSession = new Date(Date.now() + env.sessionTtlMs);
+    const [session] = await db
+      .insert(influencerSessions)
+      .values({
+        influencerId: invite.influencerId,
+        status: 'authenticated',
+        expiresAt: expiresAtSession,
+      })
+      .returning({ sessionId: influencerSessions.sessionId });
+
+    return {
+      sessionId: session.sessionId,
+      profileCompletionStatus: inf[0].profileCompletionStatus ?? 'incomplete',
+    };
   }
 
   private async upsertInfluencer(

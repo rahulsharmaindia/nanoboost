@@ -38,6 +38,14 @@ export const influencers = pgTable(
     followsCount: integer('follows_count').notNull().default(0),
     mediaCount: integer('media_count').notNull().default(0),
     niche: text('niche'),
+    // Creator rate card (whole currency units). Nullable at the DB level so
+    // pre-existing rows aren't broken; the API requires them on new profile
+    // submissions. `priceAdRights15Days` is the fee to grant the brand 15
+    // days of advertising/usage rights on the delivered content.
+    pricePerReel: integer('price_per_reel'),
+    pricePerPost: integer('price_per_post'),
+    pricePerStory: integer('price_per_story'),
+    priceAdRights15Days: integer('price_ad_rights_15_days'),
     // Mandatory profile-completion tracking for the onboarding hard-lock.
     profileCompletionStatus: profileCompletionStatusEnum('profile_completion_status')
       .notNull()
@@ -147,8 +155,32 @@ export const influencerSessions = pgTable(
   }),
 );
 
+// Single-use magic-link invite tokens for bulk-imported influencers.
+// An admin imports influencer profiles (see drizzle/import-influencers.ts)
+// and mints one token per influencer. The influencer redeems it via
+// GET /api/auth/invite?token=<token>, which issues a session — no
+// password or OAuth needed for first access. Tokens are single-use
+// (consumed via `used_at`) and expire after a configurable window.
+export const influencerInviteTokens = pgTable(
+  'influencer_invite_tokens',
+  {
+    token: text('token').primaryKey(),
+    influencerId: text('influencer_id')
+      .notNull()
+      .references(() => influencers.influencerId, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    influencerIdx: index('idx_invite_influencer').on(t.influencerId),
+  }),
+);
+
 export type Influencer = typeof influencers.$inferSelect;
 export type NewInfluencer = typeof influencers.$inferInsert;
+export type InfluencerInviteToken = typeof influencerInviteTokens.$inferSelect;
+export type NewInfluencerInviteToken = typeof influencerInviteTokens.$inferInsert;
 export type InfluencerSocialAccount = typeof influencerSocialAccounts.$inferSelect;
 export type NewInfluencerSocialAccount = typeof influencerSocialAccounts.$inferInsert;
 export type InfluencerOauthState = typeof influencerOauthStates.$inferSelect;
