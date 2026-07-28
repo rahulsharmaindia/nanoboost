@@ -11,9 +11,18 @@ import { campaigns } from '../../database/schema/campaigns.schema';
 import {
   campaignApplications as applications,
   campaignSubmissions as submissions,
+  campaignCollaborations as collaborations,
+  campaignCollaborationEvents as collaborationEvents,
 } from '../../database/schema/engagement.schema';
 import { brands } from '../../database/schema/brands.schema';
-import { CampaignStatus, ApplicationStatus, SubmissionStatus } from './campaigns.types';
+import {
+  CampaignStatus,
+  ApplicationStatus,
+  SubmissionStatus,
+  CollaborationStatus,
+  CollaborationEventType,
+  CollaborationActorType,
+} from './campaigns.types';
 
 export interface CampaignRecord {
   campaignId: string;
@@ -38,12 +47,36 @@ export interface SubmissionRecord {
   submissionId: string;
   campaignId: string;
   influencerId: string;
+  collaborationId?: string | null;
   influencerUsername?: string;
   contentUrl?: string;
   contentCaption?: string;
   notesToBrand?: string;
   revisionNotes?: string;
+  revisionCount: number;
   status: SubmissionStatus;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CollaborationRecord {
+  id: string;
+  campaignId: string;
+  influencerId: string;
+  status: CollaborationStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollaborationEventRecord {
+  id: string;
+  collaborationId: string;
+  type: CollaborationEventType;
+  actorType: CollaborationActorType;
+  actorId?: string | null;
+  body?: string | null;
+  submissionId?: string | null;
+  metadata?: Record<string, any> | null;
   createdAt: string;
 }
 
@@ -446,7 +479,13 @@ export class CampaignsRepository {
   async createSubmission(
     campaignId: string,
     influencerId: string,
-    data: { contentUrl?: string; contentCaption?: string; notesToBrand?: string; influencerUsername?: string },
+    data: {
+      contentUrl?: string;
+      contentCaption?: string;
+      notesToBrand?: string;
+      influencerUsername?: string;
+      collaborationId?: string | null;
+    },
   ): Promise<SubmissionRecord> {
     const submissionId = randomUUID();
 
@@ -454,6 +493,7 @@ export class CampaignsRepository {
       submissionId,
       campaignId,
       influencerId,
+      collaborationId: data.collaborationId ?? null,
       influencerUsername: data.influencerUsername ?? null,
       contentUrl: data.contentUrl ?? null,
       contentCaption: data.contentCaption ?? null,
@@ -462,6 +502,32 @@ export class CampaignsRepository {
     });
 
     return (await this.getSubmission(submissionId))!;
+  }
+
+  async listSubmissionsByCollaboration(collaborationId: string): Promise<SubmissionRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.collaborationId, collaborationId))
+      .orderBy(submissions.createdAt);
+    return rows.map((r: any) => this.mapDbSubmission(r));
+  }
+
+  async listSubmissionsByInfluencerCampaign(
+    campaignId: string,
+    influencerId: string,
+  ): Promise<SubmissionRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.campaignId, campaignId),
+          eq(submissions.influencerId, influencerId),
+        ),
+      )
+      .orderBy(submissions.createdAt);
+    return rows.map((r: any) => this.mapDbSubmission(r));
   }
 
   async getSubmission(submissionId: string): Promise<SubmissionRecord | null> {
@@ -476,11 +542,135 @@ export class CampaignsRepository {
   }
 
   async updateSubmission(submissionId: string, data: Partial<SubmissionRecord>): Promise<SubmissionRecord | null> {
-    const updateData: Record<string, any> = {};
+    const updateData: Record<string, any> = { updatedAt: new Date() };
     if (data.status !== undefined) updateData.status = data.status;
     if (data.revisionNotes !== undefined) updateData.revisionNotes = data.revisionNotes;
+    if (data.contentUrl !== undefined) updateData.contentUrl = data.contentUrl;
+    if (data.contentCaption !== undefined) updateData.contentCaption = data.contentCaption;
+    if (data.notesToBrand !== undefined) updateData.notesToBrand = data.notesToBrand;
+    if (data.revisionCount !== undefined) updateData.revisionCount = data.revisionCount;
     await this.db.update(submissions).set(updateData).where(eq(submissions.submissionId, submissionId));
     return this.getSubmission(submissionId);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // Collaborations + thread events
+  // ══════════════════════════════════════════════════════════════
+
+  /**
+   * Creates a collaboration for an approved influencer, or returns the
+   * existing one. The unique (campaignId, influencerId) index makes this
+   * idempotent, so re-approving never duplicates a thread.
+   */
+  async createCollaboration(
+    campaignId: string,
+    influencerId: string,
+  ): Promise<CollaborationRecord> {
+    const existing = await this.findCollaboration(campaignId, influencerId);
+    if (existing) return existing;
+
+    const id = randomUUID();
+    await this.db
+      .insert(collaborations)
+      .values({ id, campaignId, influencerId, status: 'Active' })
+      .onConflictDoNothing();
+
+    return (await this.findCollaboration(campaignId, influencerId))!;
+  }
+
+  async getCollaboration(id: string): Promise<CollaborationRecord | null> {
+    const rows = await this.db.select().from(collaborations).where(eq(collaborations.id, id));
+    if (rows.length === 0) return null;
+    return this.mapDbCollaboration(rows[0]);
+  }
+
+  async findCollaboration(
+    campaignId: string,
+    influencerId: string,
+  ): Promise<CollaborationRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(collaborations)
+      .where(
+        and(
+          eq(collaborations.campaignId, campaignId),
+          eq(collaborations.influencerId, influencerId),
+        ),
+      );
+    if (rows.length === 0) return null;
+    return this.mapDbCollaboration(rows[0]);
+  }
+
+  async listCollaborationsByCampaign(campaignId: string): Promise<CollaborationRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(collaborations)
+      .where(eq(collaborations.campaignId, campaignId))
+      .orderBy(desc(collaborations.createdAt));
+    return rows.map((r: any) => this.mapDbCollaboration(r));
+  }
+
+  async listCollaborationsByInfluencer(influencerId: string): Promise<CollaborationRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(collaborations)
+      .where(eq(collaborations.influencerId, influencerId))
+      .orderBy(desc(collaborations.createdAt));
+    return rows.map((r: any) => this.mapDbCollaboration(r));
+  }
+
+  async updateCollaborationStatus(
+    id: string,
+    status: CollaborationStatus,
+  ): Promise<CollaborationRecord | null> {
+    await this.db
+      .update(collaborations)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(collaborations.id, id));
+    return this.getCollaboration(id);
+  }
+
+  async addEvent(data: {
+    collaborationId: string;
+    type: CollaborationEventType;
+    actorType: CollaborationActorType;
+    actorId?: string | null;
+    body?: string | null;
+    submissionId?: string | null;
+    metadata?: Record<string, any> | null;
+  }): Promise<CollaborationEventRecord> {
+    const id = randomUUID();
+    await this.db.insert(collaborationEvents).values({
+      id,
+      collaborationId: data.collaborationId,
+      type: data.type,
+      actorType: data.actorType,
+      actorId: data.actorId ?? null,
+      body: data.body ?? null,
+      submissionId: data.submissionId ?? null,
+      metadata: data.metadata ?? null,
+    });
+    // Bump the parent collaboration's updatedAt so inbox lists can sort by
+    // most-recent activity.
+    await this.db
+      .update(collaborations)
+      .set({ updatedAt: new Date() })
+      .where(eq(collaborations.id, data.collaborationId));
+
+    const rows = await this.db
+      .select()
+      .from(collaborationEvents)
+      .where(eq(collaborationEvents.id, id));
+    return this.mapDbEvent(rows[0]);
+  }
+
+  async listEvents(collaborationId: string): Promise<CollaborationEventRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(collaborationEvents)
+      .where(eq(collaborationEvents.collaborationId, collaborationId))
+      .orderBy(collaborationEvents.createdAt);
+    return rows.map((r: any) => this.mapDbEvent(r));
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -593,12 +783,40 @@ export class CampaignsRepository {
       submissionId: row.submissionId,
       campaignId: row.campaignId,
       influencerId: row.influencerId,
+      collaborationId: row.collaborationId ?? null,
       influencerUsername: row.influencerUsername,
       contentUrl: row.contentUrl,
       contentCaption: row.contentCaption,
       notesToBrand: row.notesToBrand,
       revisionNotes: row.revisionNotes,
+      revisionCount: row.revisionCount ?? 0,
       status: row.status,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
+    };
+  }
+
+  private mapDbCollaboration(row: any): CollaborationRecord {
+    return {
+      id: row.id,
+      campaignId: row.campaignId,
+      influencerId: row.influencerId,
+      status: row.status,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
+    };
+  }
+
+  private mapDbEvent(row: any): CollaborationEventRecord {
+    return {
+      id: row.id,
+      collaborationId: row.collaborationId,
+      type: row.type,
+      actorType: row.actorType,
+      actorId: row.actorId,
+      body: row.body,
+      submissionId: row.submissionId,
+      metadata: row.metadata ?? null,
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     };
   }

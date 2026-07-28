@@ -10,7 +10,34 @@ export type CampaignStatus =
 
 export type ApplicationStatus = 'Pending' | 'Approved' | 'Rejected' | 'Withdrawn';
 
-export type SubmissionStatus = 'Pending_Review' | 'Approved' | 'Revision_Requested' | 'Published';
+export type SubmissionStatus =
+  | 'Pending_Review'
+  | 'Approved'
+  | 'Revision_Requested'
+  | 'Rejected'
+  | 'Published';
+
+export type CollaborationStatus = 'Active' | 'Completed' | 'Withdrawn' | 'Cancelled';
+
+export type CollaborationEventType =
+  | 'message'
+  | 'collaboration_started'
+  | 'submission_created'
+  | 'submission_resubmitted'
+  | 'revision_requested'
+  | 'submission_approved'
+  | 'submission_rejected'
+  | 'submission_published'
+  | 'status_changed';
+
+// The actor that produced a thread entry.
+export type CollaborationActorType = 'brand' | 'influencer' | 'system';
+
+// Submission statuses from which an influencer may edit + resubmit.
+export const RESUBMITTABLE_STATUSES: SubmissionStatus[] = [
+  'Revision_Requested',
+  'Rejected',
+];
 
 export const VALID_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
   Draft: ['Published', 'Cancelled'],

@@ -51,14 +51,29 @@ export const submissionStatusEnum = pgEnum('submission_status', [
   'Pending_Review',
   'Approved',
   'Revision_Requested',
+  'Rejected',
   'Published',
 ]);
+// Convention: PascalCase to match application_status / submission_status.
 export const collaborationStatusEnum = pgEnum('collaboration_status', [
-  'pending',
-  'active',
-  'completed',
-  'withdrawn',
-  'rejected',
+  'Active',
+  'Completed',
+  'Withdrawn',
+  'Cancelled',
+]);
+// Types of entries that appear in a collaboration thread. `message` is a
+// free-text note from either party; everything else is a system event
+// emitted by a submission/lifecycle action.
+export const collaborationEventTypeEnum = pgEnum('collaboration_event_type', [
+  'message',
+  'collaboration_started',
+  'submission_created',
+  'submission_resubmitted',
+  'revision_requested',
+  'submission_approved',
+  'submission_rejected',
+  'submission_published',
+  'status_changed',
 ]);
 export const proposalStatusEnum = pgEnum('proposal_status', [
   'delivered',

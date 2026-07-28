@@ -43,6 +43,13 @@
       "when": 1785059515891,
       "tag": "0005_influencer_rate_card",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0006_campaign_collaboration_thread",
+      "breakpoints": true
     }
   ]
 }

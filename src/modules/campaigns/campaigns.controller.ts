@@ -147,6 +147,46 @@ export class CampaignsController {
     );
   }
 
+  // ── Collaboration threads (brand side) ────────────────────
+
+  @UseGuards(BrandAuthGuard)
+  @Get('api/campaigns/:campaignId/collaborations')
+  listCampaignCollaborations(
+    @Req() req: Request,
+    @Param('campaignId') campaignId: string,
+  ) {
+    return this.campaignsService.listCampaignCollaborations(
+      (req as any).sessionId,
+      campaignId,
+    );
+  }
+
+  @UseGuards(BrandAuthGuard)
+  @Get('api/brand/collaborations/:collaborationId/thread')
+  getBrandThread(
+    @Req() req: Request,
+    @Param('collaborationId') collaborationId: string,
+  ) {
+    return this.campaignsService.getThreadAsBrand(
+      (req as any).sessionId,
+      collaborationId,
+    );
+  }
+
+  @UseGuards(BrandAuthGuard)
+  @Post('api/brand/collaborations/:collaborationId/messages')
+  postBrandMessage(
+    @Req() req: Request,
+    @Param('collaborationId') collaborationId: string,
+    @Body('body') body: string,
+  ) {
+    return this.campaignsService.postMessageAsBrand(
+      (req as any).sessionId,
+      collaborationId,
+      body,
+    );
+  }
+
   // ── Influencer endpoints ──────────────────────────────────
 
   @UseGuards(AuthGuard)
@@ -211,8 +251,73 @@ export class CampaignsController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('api/campaigns/:campaignId/my-submissions')
+  getMySubmissions(@Req() req: Request, @Param('campaignId') campaignId: string) {
+    return this.campaignsService.getMySubmissions((req as any).sessionId, campaignId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('api/campaigns/:campaignId/submissions/:submissionId/resubmit')
+  resubmitContent(
+    @Req() req: Request,
+    @Param('campaignId') campaignId: string,
+    @Param('submissionId') submissionId: string,
+    @Body() body: { contentUrl?: string; contentCaption?: string; notesToBrand?: string },
+  ) {
+    return this.campaignsService.resubmitContent(
+      (req as any).sessionId,
+      campaignId,
+      submissionId,
+      body,
+    );
+  }
+
+  @UseGuards(AuthGuard)
   @Get('api/my-campaigns')
   getMyCampaigns(@Req() req: Request) {
     return this.campaignsService.getMyCampaigns((req as any).sessionId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('api/campaigns/:campaignId/my-collaboration')
+  getMyCollaboration(@Req() req: Request, @Param('campaignId') campaignId: string) {
+    return this.campaignsService.getMyCollaborationForCampaign(
+      (req as any).sessionId,
+      campaignId,
+    );
+  }
+
+  // ── Collaboration threads (influencer side) ───────────────
+
+  @UseGuards(AuthGuard)
+  @Get('api/my-collaborations')
+  listMyCollaborations(@Req() req: Request) {
+    return this.campaignsService.listMyCollaborations((req as any).sessionId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('api/collaborations/:collaborationId/thread')
+  getInfluencerThread(
+    @Req() req: Request,
+    @Param('collaborationId') collaborationId: string,
+  ) {
+    return this.campaignsService.getThreadAsInfluencer(
+      (req as any).sessionId,
+      collaborationId,
+    );
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('api/collaborations/:collaborationId/messages')
+  postInfluencerMessage(
+    @Req() req: Request,
+    @Param('collaborationId') collaborationId: string,
+    @Body('body') body: string,
+  ) {
+    return this.campaignsService.postMessageAsInfluencer(
+      (req as any).sessionId,
+      collaborationId,
+      body,
+    );
   }
 }

@@ -25,7 +25,12 @@ import {
   SlotsFullError,
   SubmissionNotFoundError,
   SubmissionForbiddenError,
+  SubmissionNotEditableError,
+  ContentLimitReachedError,
+  CollaborationNotFoundError,
+  CollaborationForbiddenError,
 } from './campaigns.errors';
+import { RESUBMITTABLE_STATUSES } from './campaigns.types';
 import { UnauthorizedError, ValidationError } from '../../common/errors/app.errors';
 
 @Injectable()
@@ -319,7 +324,29 @@ export class CampaignsService {
       }
     }
 
-    return (await this.campaignsRepository.updateApplication(applicationId, { status: status as any }))!;
+    const updated = (await this.campaignsRepository.updateApplication(applicationId, {
+      status: status as any,
+    }))!;
+
+    // Approving an application opens the working relationship: create the
+    // collaboration thread (idempotent) and seed it with a first event.
+    if (status === 'Approved') {
+      const collaboration = await this.campaignsRepository.createCollaboration(
+        campaignId,
+        application.influencerId,
+      );
+      const existingEvents = await this.campaignsRepository.listEvents(collaboration.id);
+      if (existingEvents.length === 0) {
+        await this.campaignsRepository.addEvent({
+          collaborationId: collaboration.id,
+          type: 'collaboration_started',
+          actorType: 'system',
+          body: `Collaboration started for "${campaign.title}".`,
+        });
+      }
+    }
+
+    return updated;
   }
 
   // ── Submissions (Brand side) ───────────────────────────────
@@ -382,14 +409,45 @@ export class CampaignsService {
       throw new SubmissionNotFoundError();
     }
 
-    if (!['Approved', 'Revision_Requested'].includes(status)) {
-      throw new ValidationError('Status must be "Approved" or "Revision_Requested"');
+    if (!['Approved', 'Revision_Requested', 'Rejected'].includes(status)) {
+      throw new ValidationError(
+        'Status must be "Approved", "Revision_Requested", or "Rejected"',
+      );
+    }
+
+    // A comment is mandatory when asking for changes or rejecting — the
+    // creator needs to know why.
+    if (
+      (status === 'Revision_Requested' || status === 'Rejected') &&
+      (!revisionNotes || !revisionNotes.trim())
+    ) {
+      throw new ValidationError('Please include a note explaining the requested changes');
     }
 
     const updateData: Record<string, any> = { status };
-    if (revisionNotes) updateData.revisionNotes = revisionNotes;
+    if (revisionNotes !== undefined) updateData.revisionNotes = revisionNotes ?? null;
 
-    return (await this.campaignsRepository.updateSubmission(submissionId, updateData))!;
+    const updated = (await this.campaignsRepository.updateSubmission(submissionId, updateData))!;
+
+    // Mirror the decision into the collaboration thread.
+    if (submission.collaborationId) {
+      const eventType =
+        status === 'Approved'
+          ? 'submission_approved'
+          : status === 'Rejected'
+            ? 'submission_rejected'
+            : 'revision_requested';
+      await this.campaignsRepository.addEvent({
+        collaborationId: submission.collaborationId,
+        type: eventType as any,
+        actorType: 'brand',
+        actorId: brandId,
+        body: revisionNotes?.trim() ? revisionNotes.trim() : null,
+        submissionId,
+      });
+    }
+
+    return updated;
   }
 
   // ── Marketplace (Influencer side) ──────────────────────────
@@ -540,10 +598,120 @@ export class CampaignsService {
       throw new SubmissionForbiddenError();
     }
 
-    return this.campaignsRepository.createSubmission(campaignId, influencerId, {
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
+    if (!campaign) throw new CampaignNotFoundError();
+
+    // Ensure a collaboration exists (covers approvals made before this
+    // feature shipped) and enforce the per-influencer content limit.
+    const collaboration = await this.campaignsRepository.createCollaboration(
+      campaignId,
+      influencerId,
+    );
+
+    const limit = Number(campaign.contentCountPerInfluencer) || 0;
+    if (limit > 0) {
+      const existing = await this.campaignsRepository.listSubmissionsByCollaboration(
+        collaboration.id,
+      );
+      if (existing.length >= limit) {
+        throw new ContentLimitReachedError();
+      }
+    }
+
+    const submission = await this.campaignsRepository.createSubmission(campaignId, influencerId, {
       ...data,
       influencerUsername: application.username,
+      collaborationId: collaboration.id,
     });
+
+    await this.campaignsRepository.addEvent({
+      collaborationId: collaboration.id,
+      type: 'submission_created',
+      actorType: 'influencer',
+      actorId: influencerId,
+      body: data.notesToBrand?.trim() ? data.notesToBrand.trim() : null,
+      submissionId: submission.submissionId,
+    });
+
+    return submission;
+  }
+
+  /**
+   * Returns the authenticated influencer's submissions for a campaign,
+   * plus the remaining content count so the client can gate the
+   * "Submit content" button.
+   */
+  async getMySubmissions(sessionId: string, campaignId: string) {
+    const { influencerId } = await this.requireCreatorSession(sessionId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
+    if (!campaign) throw new CampaignNotFoundError();
+
+    const submissionsList =
+      await this.campaignsRepository.listSubmissionsByInfluencerCampaign(campaignId, influencerId);
+
+    const limit = Number(campaign.contentCountPerInfluencer) || 0;
+    const remaining = limit > 0 ? Math.max(0, limit - submissionsList.length) : null;
+
+    return {
+      submissions: submissionsList,
+      contentCount: limit > 0 ? limit : null,
+      remaining,
+    };
+  }
+
+  /**
+   * Lets an influencer edit and resubmit a submission that the brand
+   * asked to revise or rejected. Resubmission edits in place (keeping the
+   * same content slot) and records an event in the thread.
+   */
+  async resubmitContent(
+    sessionId: string,
+    campaignId: string,
+    submissionId: string,
+    data: { contentUrl?: string; contentCaption?: string; notesToBrand?: string },
+  ) {
+    const { influencerId } = await this.requireCreatorSession(sessionId);
+
+    const submission = await this.campaignsRepository.getSubmission(submissionId);
+    if (!submission || submission.campaignId !== campaignId) {
+      throw new SubmissionNotFoundError();
+    }
+    if (submission.influencerId !== influencerId) {
+      throw new SubmissionForbiddenError();
+    }
+    if (!RESUBMITTABLE_STATUSES.includes(submission.status)) {
+      throw new SubmissionNotEditableError();
+    }
+
+    const updated = (await this.campaignsRepository.updateSubmission(submissionId, {
+      contentUrl: data.contentUrl,
+      contentCaption: data.contentCaption,
+      notesToBrand: data.notesToBrand,
+      status: 'Pending_Review',
+      revisionCount: (submission.revisionCount ?? 0) + 1,
+    }))!;
+
+    if (submission.collaborationId) {
+      await this.campaignsRepository.addEvent({
+        collaborationId: submission.collaborationId,
+        type: 'submission_resubmitted',
+        actorType: 'influencer',
+        actorId: influencerId,
+        body: data.notesToBrand?.trim() ? data.notesToBrand.trim() : null,
+        submissionId,
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Returns the authenticated influencer's collaboration for a campaign,
+   * or null if none exists yet (i.e. not approved).
+   */
+  async getMyCollaborationForCampaign(sessionId: string, campaignId: string) {
+    const { influencerId } = await this.requireCreatorSession(sessionId);
+    return this.campaignsRepository.findCollaboration(campaignId, influencerId);
   }
 
   async getMyCampaigns(sessionId: string) {
@@ -583,5 +751,153 @@ export class CampaignsService {
       });
     }
     return results;
+  }
+
+  // ── Collaboration threads ──────────────────────────────────
+
+  /**
+   * Brand-side: all collaborations for a campaign the brand owns, each
+   * enriched with the influencer handle and submission count.
+   */
+  async listCampaignCollaborations(sessionId: string, campaignId: string) {
+    const brandId = await this.requireBrandSession(sessionId);
+    const campaign = await this.campaignsRepository.getCampaign(campaignId);
+    if (!campaign || campaign.brandId !== brandId) {
+      throw new CampaignNotFoundError();
+    }
+
+    const collabs = await this.campaignsRepository.listCollaborationsByCampaign(campaignId);
+    const apps = await this.campaignsRepository.listApplicationsByCampaign(campaignId);
+    const handleByInfluencer = new Map(apps.map((a) => [a.influencerId, a.username]));
+
+    const results = [];
+    for (const collab of collabs) {
+      const subs = await this.campaignsRepository.listSubmissionsByCollaboration(collab.id);
+      results.push({
+        ...collab,
+        influencerUsername: handleByInfluencer.get(collab.influencerId) ?? null,
+        submissionCount: subs.length,
+        campaignTitle: campaign.title,
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Influencer-side: all of my collaborations across campaigns, enriched
+   * with campaign title + brand name for an inbox-style list.
+   */
+  async listMyCollaborations(sessionId: string) {
+    const { influencerId } = await this.requireCreatorSession(sessionId);
+    const collabs = await this.campaignsRepository.listCollaborationsByInfluencer(influencerId);
+
+    const results = [];
+    const campaignCache = new Map<string, Awaited<ReturnType<CampaignsRepository['getCampaign']>>>();
+    const brandIds: string[] = [];
+    for (const collab of collabs) {
+      if (!campaignCache.has(collab.campaignId)) {
+        campaignCache.set(
+          collab.campaignId,
+          await this.campaignsRepository.getCampaign(collab.campaignId),
+        );
+      }
+      const campaign = campaignCache.get(collab.campaignId);
+      if (campaign) brandIds.push(campaign.brandId);
+    }
+    const brandInfo = await this.campaignsRepository.getBrandInfo(brandIds);
+
+    for (const collab of collabs) {
+      const campaign = campaignCache.get(collab.campaignId);
+      if (!campaign) continue;
+      results.push({
+        ...collab,
+        campaignTitle: campaign.title,
+        brandName: brandInfo[campaign.brandId]?.name ?? 'Unknown Brand',
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Resolves a collaboration for a brand caller, enforcing that the brand
+   * owns the parent campaign.
+   */
+  private async resolveCollaborationForBrand(sessionId: string, collaborationId: string) {
+    const brandId = await this.requireBrandSession(sessionId);
+    const collab = await this.campaignsRepository.getCollaboration(collaborationId);
+    if (!collab) throw new CollaborationNotFoundError();
+    const campaign = await this.campaignsRepository.getCampaign(collab.campaignId);
+    if (!campaign || campaign.brandId !== brandId) {
+      throw new CollaborationForbiddenError();
+    }
+    return { collab, campaign, brandId };
+  }
+
+  /**
+   * Resolves a collaboration for an influencer caller, enforcing that the
+   * influencer is the participant.
+   */
+  private async resolveCollaborationForInfluencer(sessionId: string, collaborationId: string) {
+    const { influencerId } = await this.requireCreatorSession(sessionId);
+    const collab = await this.campaignsRepository.getCollaboration(collaborationId);
+    if (!collab) throw new CollaborationNotFoundError();
+    if (collab.influencerId !== influencerId) {
+      throw new CollaborationForbiddenError();
+    }
+    const campaign = await this.campaignsRepository.getCampaign(collab.campaignId);
+    return { collab, campaign, influencerId };
+  }
+
+  private async buildThread(collaborationId: string, campaignTitle?: string) {
+    const [events, subs] = await Promise.all([
+      this.campaignsRepository.listEvents(collaborationId),
+      this.campaignsRepository.listSubmissionsByCollaboration(collaborationId),
+    ]);
+    return { events, submissions: subs, campaignTitle: campaignTitle ?? null };
+  }
+
+  async getThreadAsBrand(sessionId: string, collaborationId: string) {
+    const { collab, campaign } = await this.resolveCollaborationForBrand(
+      sessionId,
+      collaborationId,
+    );
+    return { collaboration: collab, ...(await this.buildThread(collab.id, campaign.title)) };
+  }
+
+  async getThreadAsInfluencer(sessionId: string, collaborationId: string) {
+    const { collab, campaign } = await this.resolveCollaborationForInfluencer(
+      sessionId,
+      collaborationId,
+    );
+    return { collaboration: collab, ...(await this.buildThread(collab.id, campaign?.title)) };
+  }
+
+  async postMessageAsBrand(sessionId: string, collaborationId: string, body: string) {
+    const { collab, brandId } = await this.resolveCollaborationForBrand(sessionId, collaborationId);
+    const trimmed = (body ?? '').trim();
+    if (!trimmed) throw new ValidationError('Message cannot be empty');
+    return this.campaignsRepository.addEvent({
+      collaborationId: collab.id,
+      type: 'message',
+      actorType: 'brand',
+      actorId: brandId,
+      body: trimmed,
+    });
+  }
+
+  async postMessageAsInfluencer(sessionId: string, collaborationId: string, body: string) {
+    const { collab, influencerId } = await this.resolveCollaborationForInfluencer(
+      sessionId,
+      collaborationId,
+    );
+    const trimmed = (body ?? '').trim();
+    if (!trimmed) throw new ValidationError('Message cannot be empty');
+    return this.campaignsRepository.addEvent({
+      collaborationId: collab.id,
+      type: 'message',
+      actorType: 'influencer',
+      actorId: influencerId,
+      body: trimmed,
+    });
   }
 }

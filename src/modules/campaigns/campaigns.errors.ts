@@ -39,3 +39,23 @@ export class SubmissionNotFoundError extends NotFoundError {
 export class SubmissionForbiddenError extends ForbiddenError {
   constructor() { super('You must have an approved application to submit content'); }
 }
+
+export class SubmissionNotEditableError extends ValidationError {
+  constructor() {
+    super('Only submissions with a revision request or rejection can be edited');
+  }
+}
+
+export class ContentLimitReachedError extends ValidationError {
+  constructor() {
+    super('You have reached the content limit for this campaign');
+  }
+}
+
+export class CollaborationNotFoundError extends NotFoundError {
+  constructor() { super('Collaboration not found'); }
+}
+
+export class CollaborationForbiddenError extends ForbiddenError {
+  constructor() { super('You do not have access to this collaboration'); }
+}
